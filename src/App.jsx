@@ -2483,7 +2483,9 @@ function EquipmentPanel({ equipment, onEquipmentChange, rentals, onRentalsChange
 // ── Main App ───────────────────────────────────────────────────
 export default function App() {
   const [loaded, setLoaded] = useState(false);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    try { const s = localStorage.getItem("se_current_user"); return s ? JSON.parse(s) : null; } catch { return null; }
+  });
   const [pinTarget, setPinTarget] = useState(null);
   const [tab, setTab] = useState("dashboard");
   const [toast, setToast] = useState("");
@@ -2550,7 +2552,7 @@ export default function App() {
     db.addLog(entry);
   }, [user]);
 
-  const handleLogin = (m) => { setUser(m); setPinTarget(null); showToast(`Welcome back, ${m.name}`); };
+  const handleLogin = (m) => { setUser(m); setPinTarget(null); localStorage.setItem("se_current_user", JSON.stringify(m)); showToast(`Welcome back, ${m.name}`); };
   const handleStatusChange = (vanId, s) => {
     setVans(prev => prev.map(v => v.id === vanId ? { ...v, status: s } : v));
     addLog(`set status to ${statusLabel[s]}`, vans.find(v => v.id === vanId)?.name);
@@ -2664,7 +2666,7 @@ export default function App() {
         <span className="header-brand">Scotland Escape</span>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div className="header-user"><div className="header-avatar">{user.name[0]}</div><span>{user.name}</span></div>
-          <button className="logout-btn" onClick={() => { setUser(null); setTab("dashboard"); }}>Sign out</button>
+          <button className="logout-btn" onClick={() => { setUser(null); setTab("dashboard"); localStorage.removeItem("se_current_user"); }}>Sign out</button>
         </div>
       </div>
       <div className="nav">{tabs.map(t => <button key={t.id} className={`nav-btn ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
