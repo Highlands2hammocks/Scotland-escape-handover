@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(open *)",
+      "Bash(curl -s http://localhost:5174)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx vite *)",
+      "Bash(grep -n \"TYRE_SECTION_IDS\\\\|TyreGrid\\\\|eqOpen\\\\|equipment, onEquipmentChange\\\\|catalogueOnly={true}\\\\|hideCatalogueBtn={true}\\\\|Equipment.*Rentals\\\\|\\\\\"Equipment\\\\\"\\\\|tyreData\" /Users/mac/scotland-escape-app/src/App.jsx)",
+      "Bash(git -C /Users/mac/scotland-escape-app remote -v)",
+      "Bash(git -C /Users/mac/scotland-escape-app status --short)"
+    ]
+  }
+}

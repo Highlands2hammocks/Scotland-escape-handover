@@ -1,0 +1,341 @@
+-- Scotland Escape — Seed Data
+-- Run AFTER 001_initial_schema.sql
+-- Update PINs and emails before running in production.
+
+-- ── Team Members ──────────────────────────────────────────────
+
+INSERT INTO team_members (name, email, role, pin) VALUES
+  ('Campbell', 'campbell@scotlandescape.com', 'admin', '1111'),
+  ('Gemma',    'gemma@scotlandescape.com',    'admin', '2222'),
+  ('Jorja',    'jorja@scotlandescape.com',    'team',  '3333'),
+  ('Michael',  'michael@scotlandescape.com',  'team',  '4444');
+
+-- ── Vans ──────────────────────────────────────────────────────
+
+INSERT INTO vans (id, name, status, mot_expiry, tax_expiry, insurance_expiry, mileage) VALUES
+  ('a1b2c3d4-0001-0001-0001-000000000001', 'Freddy', 'available', '2026-09-15', '2026-11-01', '2026-08-20', 42350),
+  ('a1b2c3d4-0002-0002-0002-000000000002', 'Dolly',  'available', '2026-07-22', '2026-10-15', '2026-08-20', 38120);
+
+-- ── Checklist Templates ───────────────────────────────────────
+
+-- Freddy — Pre-departure
+INSERT INTO checklist_templates (van_id, type, sections) VALUES (
+  'a1b2c3d4-0001-0001-0001-000000000001',
+  'pre_departure',
+  '[
+    {
+      "id": "clean_cab", "section": "Cleaning — Cab", "icon": "🧹",
+      "items": [
+        {"id":"cc1","label":"Hoover cab floor and mats","qty":null},
+        {"id":"cc2","label":"Mop cab floor","qty":null},
+        {"id":"cc3","label":"Wipe dashboard and steering wheel","qty":null},
+        {"id":"cc4","label":"Clean all cab windows (inside)","qty":null},
+        {"id":"cc5","label":"Wipe cab doors and handles","qty":null},
+        {"id":"cc6","label":"Clean windscreen (inside)","qty":null},
+        {"id":"cc7","label":"Wipe swivel chair mechanism","qty":null}
+      ]
+    },
+    {
+      "id": "clean_hab", "section": "Cleaning — Habitation", "icon": "🧽",
+      "items": [
+        {"id":"ch1","label":"Hoover habitation floor","qty":null},
+        {"id":"ch2","label":"Mop habitation floor","qty":null},
+        {"id":"ch3","label":"Wipe countertops","qty":null},
+        {"id":"ch4","label":"Clean habitation windows (inside)","qty":null},
+        {"id":"ch5","label":"Wipe sliding door and handle","qty":null},
+        {"id":"ch6","label":"Wipe rear doors and handles","qty":null},
+        {"id":"ch7","label":"Check and clean all cupboards","qty":null},
+        {"id":"ch8","label":"Check and clean under bed storage","qty":null},
+        {"id":"ch9","label":"Wipe fridge inside and out","qty":null},
+        {"id":"ch10","label":"Clean drawer (utensils/cutlery)","qty":null}
+      ]
+    },
+    {
+      "id": "clean_bed", "section": "Cleaning — Bedding", "icon": "🛏️",
+      "items": [
+        {"id":"cb1","label":"Strip previous bedding","qty":null},
+        {"id":"cb2","label":"Fit clean fitted sheet","qty":null},
+        {"id":"cb3","label":"Fit clean duvet cover on duvet","qty":null},
+        {"id":"cb4","label":"Fit clean pillow protectors","qty":null},
+        {"id":"cb5","label":"Fit clean pillow cases","qty":null},
+        {"id":"cb6","label":"Store bedding under bed correctly","qty":null}
+      ]
+    },
+    {
+      "id": "inv_kitchen", "section": "Inventory — Kitchen", "icon": "🍳",
+      "items": [
+        {"id":"ik1","label":"Plates","qty":2},
+        {"id":"ik2","label":"Bowls","qty":2},
+        {"id":"ik3","label":"Mugs","qty":2},
+        {"id":"ik4","label":"Forks","qty":2},
+        {"id":"ik5","label":"Knives","qty":2},
+        {"id":"ik6","label":"Spoons","qty":2},
+        {"id":"ik7","label":"Teaspoons","qty":2},
+        {"id":"ik8","label":"Sharp knife","qty":1},
+        {"id":"ik9","label":"Chopping board","qty":3},
+        {"id":"ik10","label":"Spatula","qty":1},
+        {"id":"ik11","label":"Tin opener","qty":1},
+        {"id":"ik12","label":"Bottle opener / corkscrew","qty":1},
+        {"id":"ik13","label":"Pot (small)","qty":1},
+        {"id":"ik14","label":"Pot (medium)","qty":1},
+        {"id":"ik15","label":"Frying pan","qty":1},
+        {"id":"ik16","label":"Tea towel","qty":1},
+        {"id":"ik17","label":"Dish cloth","qty":1},
+        {"id":"ik18","label":"Sponge","qty":1},
+        {"id":"ik19","label":"Washing up liquid","qty":1}
+      ]
+    },
+    {
+      "id": "inv_bedding", "section": "Inventory — Bedding & Towels", "icon": "🛁",
+      "items": [
+        {"id":"ib1","label":"Fitted sheet","qty":1},
+        {"id":"ib2","label":"Duvet","qty":1},
+        {"id":"ib3","label":"Duvet cover","qty":1},
+        {"id":"ib4","label":"Pillows","qty":2},
+        {"id":"ib5","label":"Pillow protectors","qty":2},
+        {"id":"ib6","label":"Pillow cases","qty":2},
+        {"id":"ib7","label":"Bath towels","qty":2},
+        {"id":"ib8","label":"Hand towels","qty":2}
+      ]
+    },
+    {
+      "id": "inv_safety", "section": "Inventory — Safety", "icon": "🔥",
+      "items": [
+        {"id":"is1","label":"Fire extinguisher (in date)","qty":1},
+        {"id":"is2","label":"Fire blanket","qty":1},
+        {"id":"is3","label":"Spare gas canisters","qty":1}
+      ]
+    },
+    {
+      "id": "inv_outdoor", "section": "Inventory — Outdoor", "icon": "⛺",
+      "items": [
+        {"id":"io1","label":"Camping chairs (under storage unit, access via rear doors)","qty":2}
+      ]
+    },
+    {
+      "id": "inv_water", "section": "Inventory — Water", "icon": "💧",
+      "items": [
+        {"id":"iw1","label":"10L water jug","qty":1},
+        {"id":"iw2","label":"Washing bucket","qty":1}
+      ]
+    },
+    {
+      "id": "inv_equip", "section": "Inventory — Equipment", "icon": "🔌",
+      "items": [
+        {"id":"ie1","label":"Electric hook-up cable (orange)","qty":1},
+        {"id":"ie2","label":"Jump leads","qty":1},
+        {"id":"ie3","label":"Camping cooker (under passenger seat)","qty":1},
+        {"id":"ie4","label":"Window covers","qty":1}
+      ]
+    },
+    {
+      "id": "check_exterior", "section": "Van Check — Exterior", "icon": "🚐",
+      "items": [
+        {"id":"ve1","label":"Walk around — check bodywork for new damage","qty":null},
+        {"id":"ve2","label":"Check all tyres (pressure and condition)","qty":null},
+        {"id":"ve3","label":"Check windscreen for chips or cracks","qty":null},
+        {"id":"ve4","label":"Check all lights working (headlights, indicators, brake, reverse)","qty":null},
+        {"id":"ve5","label":"Clean exterior windows","qty":null},
+        {"id":"ve6","label":"Check 230v hook-up receptor under rear door","qty":null}
+      ]
+    },
+    {
+      "id": "check_cab", "section": "Van Check — Cab", "icon": "🪑",
+      "items": [
+        {"id":"vc1","label":"Start engine — check warning lights clear","qty":null},
+        {"id":"vc2","label":"Check fuel level","qty":null},
+        {"id":"vc3","label":"Test parking sensors","qty":null},
+        {"id":"vc4","label":"Test Bluetooth connectivity","qty":null},
+        {"id":"vc5","label":"Note: CarPlay may not work with newer phones","qty":null},
+        {"id":"vc6","label":"Check swivel chair locks in both positions","qty":null}
+      ]
+    },
+    {
+      "id": "check_electrics", "section": "Van Check — Electrics", "icon": "⚡",
+      "items": [
+        {"id":"vl1","label":"Check leisure battery charge level","qty":null},
+        {"id":"vl2","label":"Test all 12v USB charging ports","qty":null},
+        {"id":"vl3","label":"Test all lights (switches by sliding door + countertop)","qty":null},
+        {"id":"vl4","label":"Test 230v system with hook-up cable","qty":null}
+      ]
+    },
+    {
+      "id": "check_hab", "section": "Van Check — Habitation", "icon": "🏠",
+      "items": [
+        {"id":"vh1","label":"Test fridge — hold power button on left, check it starts","qty":null},
+        {"id":"vh2","label":"Check fridge main switch by sliding door","qty":null},
+        {"id":"vh3","label":"Test bed — pull out both drawer sections smoothly","qty":null},
+        {"id":"vh4","label":"Test back cushion — remove straps, fold flat","qty":null},
+        {"id":"vh5","label":"Test L-shape seating — pull out front half only","qty":null},
+        {"id":"vh6","label":"Check drawer hook-latch is secure","qty":null},
+        {"id":"vh7","label":"Test sliding side door — opens and closes smoothly","qty":null},
+        {"id":"vh8","label":"Check rear doors open fully","qty":null},
+        {"id":"vh9","label":"Check all cupboard doors/latches","qty":null}
+      ]
+    }
+  ]'
+);
+
+-- Dolly — Pre-departure
+INSERT INTO checklist_templates (van_id, type, sections) VALUES (
+  'a1b2c3d4-0002-0002-0002-000000000002',
+  'pre_departure',
+  '[
+    {
+      "id": "d_clean_cab", "section": "Cleaning — Cab", "icon": "🧹",
+      "items": [
+        {"id":"dcc1","label":"Hoover cab floor and mats","qty":null},
+        {"id":"dcc2","label":"Mop cab floor","qty":null},
+        {"id":"dcc3","label":"Wipe dashboard and steering wheel","qty":null},
+        {"id":"dcc4","label":"Clean all cab windows (inside)","qty":null},
+        {"id":"dcc5","label":"Wipe cab doors and handles","qty":null},
+        {"id":"dcc6","label":"Clean windscreen (inside)","qty":null}
+      ]
+    },
+    {
+      "id": "d_clean_hab", "section": "Cleaning — Habitation", "icon": "🧽",
+      "items": [
+        {"id":"dch1","label":"Hoover habitation floor","qty":null},
+        {"id":"dch2","label":"Mop habitation floor","qty":null},
+        {"id":"dch3","label":"Wipe countertops and kitchen surfaces","qty":null},
+        {"id":"dch4","label":"Clean habitation windows (inside)","qty":null},
+        {"id":"dch5","label":"Wipe all doors and handles","qty":null},
+        {"id":"dch6","label":"Clean hob, grill and oven","qty":null},
+        {"id":"dch7","label":"Check and clean all cupboards","qty":null},
+        {"id":"dch8","label":"Wipe fridge inside and out","qty":null},
+        {"id":"dch9","label":"Clean sink and drainer","qty":null},
+        {"id":"dch10","label":"Empty and clean grey water bucket","qty":null}
+      ]
+    },
+    {
+      "id": "d_clean_bed", "section": "Cleaning — Bedding", "icon": "🛏️",
+      "items": [
+        {"id":"dcb1","label":"Strip previous bedding","qty":null},
+        {"id":"dcb2","label":"Fit clean fitted sheet","qty":null},
+        {"id":"dcb3","label":"Fit clean duvet cover on duvet","qty":null},
+        {"id":"dcb4","label":"Fit clean pillow protectors","qty":null},
+        {"id":"dcb5","label":"Fit clean pillow cases","qty":null},
+        {"id":"dcb6","label":"Store bedding correctly","qty":null}
+      ]
+    },
+    {
+      "id": "d_inv_kitchen", "section": "Inventory — Kitchen", "icon": "🍳",
+      "items": [
+        {"id":"dik1","label":"Plates","qty":2},
+        {"id":"dik2","label":"Bowls","qty":2},
+        {"id":"dik3","label":"Mugs","qty":2},
+        {"id":"dik4","label":"Forks","qty":2},
+        {"id":"dik5","label":"Knives","qty":2},
+        {"id":"dik6","label":"Spoons","qty":2},
+        {"id":"dik7","label":"Teaspoons","qty":2},
+        {"id":"dik8","label":"Sharp knife","qty":1},
+        {"id":"dik9","label":"Chopping board","qty":3},
+        {"id":"dik10","label":"Spatula","qty":1},
+        {"id":"dik11","label":"Tin opener","qty":1},
+        {"id":"dik12","label":"Bottle opener / corkscrew","qty":1},
+        {"id":"dik13","label":"Pot (small)","qty":1},
+        {"id":"dik14","label":"Pot (medium)","qty":1},
+        {"id":"dik15","label":"Frying pan","qty":1},
+        {"id":"dik16","label":"Oven tray","qty":1},
+        {"id":"dik17","label":"Tea towel","qty":1},
+        {"id":"dik18","label":"Dish cloth","qty":1},
+        {"id":"dik19","label":"Sponge","qty":1},
+        {"id":"dik20","label":"Washing up liquid","qty":1}
+      ]
+    },
+    {
+      "id": "d_inv_bedding", "section": "Inventory — Bedding & Towels", "icon": "🛁",
+      "items": [
+        {"id":"dib1","label":"Fitted sheet","qty":1},
+        {"id":"dib2","label":"Duvet","qty":1},
+        {"id":"dib3","label":"Duvet cover","qty":1},
+        {"id":"dib4","label":"Pillows","qty":2},
+        {"id":"dib5","label":"Pillow protectors","qty":2},
+        {"id":"dib6","label":"Pillow cases","qty":2},
+        {"id":"dib7","label":"Bath towels","qty":2},
+        {"id":"dib8","label":"Hand towels","qty":2}
+      ]
+    },
+    {
+      "id": "d_inv_safety", "section": "Inventory — Safety", "icon": "🔥",
+      "items": [
+        {"id":"dis1","label":"Fire extinguisher (in date)","qty":1},
+        {"id":"dis2","label":"Fire blanket","qty":1},
+        {"id":"dis3","label":"Gas bottles (locker accessible from back door)","qty":2}
+      ]
+    },
+    {
+      "id": "d_inv_outdoor", "section": "Inventory — Outdoor", "icon": "⛺",
+      "items": [
+        {"id":"dio1","label":"Camping chairs (stored in hab area)","qty":2}
+      ]
+    },
+    {
+      "id": "d_inv_water", "section": "Inventory — Water", "icon": "💧",
+      "items": [
+        {"id":"diw1","label":"Fill fresh water tank before handover","qty":null},
+        {"id":"diw2","label":"Grey water bucket positioned under outside pipe","qty":null}
+      ]
+    },
+    {
+      "id": "d_inv_equip", "section": "Inventory — Equipment", "icon": "🔌",
+      "items": [
+        {"id":"die1","label":"Electric hook-up cable (orange)","qty":1},
+        {"id":"die2","label":"Jump leads","qty":1},
+        {"id":"die3","label":"Window covers","qty":1},
+        {"id":"die4","label":"Dustpan and brush (under oven)","qty":1}
+      ]
+    },
+    {
+      "id": "d_check_exterior", "section": "Van Check — Exterior", "icon": "🚐",
+      "items": [
+        {"id":"dve1","label":"Walk around — check bodywork for new damage","qty":null},
+        {"id":"dve2","label":"Check all tyres (pressure and condition)","qty":null},
+        {"id":"dve3","label":"Check windscreen for chips or cracks","qty":null},
+        {"id":"dve4","label":"Check all lights working (headlights, indicators, brake, reverse)","qty":null},
+        {"id":"dve5","label":"Clean exterior windows","qty":null},
+        {"id":"dve6","label":"Check 230v hook-up receptor","qty":null},
+        {"id":"dve7","label":"Check pop top canvas from outside — no damage or gaps","qty":null}
+      ]
+    },
+    {
+      "id": "d_check_cab", "section": "Van Check — Cab", "icon": "🪑",
+      "items": [
+        {"id":"dvc1","label":"Start engine — check warning lights clear","qty":null},
+        {"id":"dvc2","label":"Check fuel level","qty":null},
+        {"id":"dvc3","label":"Test Bluetooth connectivity","qty":null}
+      ]
+    },
+    {
+      "id": "d_check_gas", "section": "Van Check — Gas", "icon": "🔵",
+      "items": [
+        {"id":"dvg1","label":"Gas bottle valve turned OFF (must be off when driving)","qty":null},
+        {"id":"dvg2","label":"Check gas bottle level — replace if low","qty":null},
+        {"id":"dvg3","label":"Test hob burners (all 2 lit)","qty":null},
+        {"id":"dvg4","label":"Test grill ignites","qty":null},
+        {"id":"dvg5","label":"Test oven ignites","qty":null}
+      ]
+    },
+    {
+      "id": "d_check_electrics", "section": "Van Check — Electrics", "icon": "⚡",
+      "items": [
+        {"id":"dvl1","label":"Check leisure battery charge level","qty":null},
+        {"id":"dvl2","label":"Test all 12v USB charging ports","qty":null},
+        {"id":"dvl3","label":"Test all lights","qty":null},
+        {"id":"dvl4","label":"Test 230v system with hook-up cable","qty":null}
+      ]
+    },
+    {
+      "id": "d_check_hab", "section": "Van Check — Habitation", "icon": "🏠",
+      "items": [
+        {"id":"dvh1","label":"Test fridge (power button — no master switch on Dolly)","qty":null},
+        {"id":"dvh2","label":"Test rock and roll bed (handle under seat via left cupboard, lever slides left, bed pulls out)","qty":null},
+        {"id":"dvh3","label":"Test pop top (undo straps, push up; close by pulling canvas in so nothing sticks out)","qty":null},
+        {"id":"dvh4","label":"Test sink tap (cold water only)","qty":null},
+        {"id":"dvh5","label":"Check grey water drain pipe is accessible at rear","qty":null},
+        {"id":"dvh6","label":"Test sliding door — opens and closes smoothly","qty":null},
+        {"id":"dvh7","label":"Check all cupboard doors and latches","qty":null}
+      ]
+    }
+  ]'
+);
