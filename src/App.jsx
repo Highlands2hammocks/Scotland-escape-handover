@@ -622,10 +622,20 @@ const css = `
 .header-brand{font-family:var(--font-display);font-size:20px;font-weight:700;}
 .header-user{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--text-dim);}
 .header-avatar{width:32px;height:32px;border-radius:50%;background:var(--accent-glow);border:1.5px solid var(--accent-dim);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--accent);}
+.header-user-name{display:inline;}
 .logout-btn{background:none;border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 14px;color:var(--text-dim);font-family:var(--font);font-size:13px;cursor:pointer;}
+.hamburger{display:none;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 11px;cursor:pointer;color:var(--text-dim);font-size:17px;line-height:1;transition:all 0.2s;}
+.hamburger.open{color:var(--accent);border-color:var(--accent-dim);background:var(--accent-glow);}
+.mobile-menu{display:none;flex-direction:column;background:var(--bg2);border-bottom:2px solid var(--border);position:sticky;top:65px;z-index:49;}
+.mobile-menu.open{display:flex;}
+.mobile-menu-btn{display:flex;align-items:center;gap:14px;width:100%;padding:15px 20px;background:none;border:none;border-top:1px solid var(--border);font-family:var(--font);font-size:15px;font-weight:500;color:var(--text-dim);cursor:pointer;text-align:left;transition:background 0.15s;}
+.mobile-menu-btn:active{background:rgba(255,255,255,0.04);}
+.mobile-menu-btn.active{color:var(--accent);background:var(--accent-glow);}
+.mobile-menu-icon{font-size:20px;width:28px;text-align:center;flex-shrink:0;}
 .nav{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--bg2);overflow-x:auto;-webkit-overflow-scrolling:touch;}
 .nav-btn{flex:1;min-width:0;padding:14px 8px;background:none;border:none;font-family:var(--font);font-size:13px;font-weight:500;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all 0.2s;}
 .nav-btn.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--accent-glow);}
+@media(max-width:768px){.hamburger{display:flex;align-items:center;justify-content:center;}.header-user-name{display:none;}.logout-btn{padding:6px 10px;font-size:12px;}.nav{display:none;}.mobile-menu{display:none;}.mobile-menu.open{display:flex;}}
 .content{padding:20px;max-width:1000px;margin:0 auto;}
 .section-title{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-muted);margin-bottom:16px;margin-top:24px;}
 .section-title:first-child{margin-top:0;}
@@ -2488,6 +2498,7 @@ export default function App() {
   });
   const [pinTarget, setPinTarget] = useState(null);
   const [tab, setTab] = useState("dashboard");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [team, setTeam] = useState(DEFAULT_TEAM);
   const [vans, setVans] = useState(DEFAULT_VANS);
@@ -2650,14 +2661,14 @@ export default function App() {
   }
 
   const tabs = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "bookings", label: "Bookings" },
-    { id: "pre_departure", label: "Pre-departure" },
-    { id: "handover", label: "Handover" },
-    { id: "post_trip", label: "Post-trip" },
-    { id: "team", label: "Team" },
-    { id: "vans", label: "Vans" },
-    { id: "equipment", label: "Equipment" },
+    { id: "dashboard",     label: "Dashboard",    icon: "🏠" },
+    { id: "bookings",      label: "Bookings",     icon: "📅" },
+    { id: "pre_departure", label: "Pre-departure", icon: "✅" },
+    { id: "handover",      label: "Handover",     icon: "🔑" },
+    { id: "post_trip",     label: "Post-trip",    icon: "🔍" },
+    { id: "team",          label: "Team",         icon: "👥" },
+    { id: "vans",          label: "Vans",         icon: "🚐" },
+    { id: "equipment",     label: "Equipment",    icon: "🎒" },
   ];
 
   return (
@@ -2665,9 +2676,17 @@ export default function App() {
       <div className="header">
         <span className="header-brand">Scotland Escape</span>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div className="header-user"><div className="header-avatar">{user.name[0]}</div><span>{user.name}</span></div>
-          <button className="logout-btn" onClick={() => { setUser(null); setTab("dashboard"); localStorage.removeItem("se_current_user"); }}>Sign out</button>
+          <div className="header-user"><div className="header-avatar">{user.name[0]}</div><span className="header-user-name">{user.name}</span></div>
+          <button className="logout-btn" onClick={() => { setUser(null); setTab("dashboard"); setMenuOpen(false); localStorage.removeItem("se_current_user"); }}>Sign out</button>
+          <button className={`hamburger${menuOpen ? " open" : ""}`} onClick={() => setMenuOpen(o => !o)} aria-label="Menu">{menuOpen ? "✕" : "☰"}</button>
         </div>
+      </div>
+      <div className={`mobile-menu${menuOpen ? " open" : ""}`}>
+        {tabs.map(t => (
+          <button key={t.id} className={`mobile-menu-btn${tab === t.id ? " active" : ""}`} onClick={() => { setTab(t.id); setMenuOpen(false); }}>
+            <span className="mobile-menu-icon">{t.icon}</span>{t.label}
+          </button>
+        ))}
       </div>
       <div className="nav">{tabs.map(t => <button key={t.id} className={`nav-btn ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       {tab === "dashboard" && <Dashboard vans={vans} logs={logs} bookings={bookings} onSetStatus={handleStatusChange} preDepartureProgress={preDepartureProgress} />}
