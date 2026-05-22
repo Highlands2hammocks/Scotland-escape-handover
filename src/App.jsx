@@ -355,6 +355,13 @@ const DEFAULT_VANS = [
 
 const DEFAULT_TEMPLATES = { freddy: FREDDY_CHECKLIST, dolly: DOLLY_CHECKLIST };
 
+// Post-trip uses the same base checklists but without cleaning sections
+// (cleaning is only done during pre-departure prep, not on return)
+const DEFAULT_POST_TRIP_TEMPLATES = {
+  freddy: FREDDY_CHECKLIST.filter(s => !s.section.startsWith("Cleaning")),
+  dolly:  DOLLY_CHECKLIST.filter(s => !s.section.startsWith("Cleaning")),
+};
+
 // ── Handover walkthrough templates ─────────────────────────────
 const DEFAULT_HANDOVER_TEMPLATES = {
   freddy: [
@@ -2889,6 +2896,7 @@ export default function App() {
   const [vans, setVans] = useState(DEFAULT_VANS);
   const [logs, setLogs] = useState([]);
   const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
+  const [postTripTemplates, setPostTripTemplates] = useState(DEFAULT_POST_TRIP_TEMPLATES);
   const [handoverTemplates, setHandoverTemplates] = useState(DEFAULT_HANDOVER_TEMPLATES);
   const [bookings, setBookings] = useState([]);
   const [equipment, setEquipment] = useState(DEFAULT_EQUIPMENT);
@@ -2905,6 +2913,7 @@ export default function App() {
           db.getTeam(), db.getVans(), db.getBookings(), db.getEquipment(), db.getLogs(), db.getPredepProgress(),
         ]);
         const tp  = await store.get("se_templates", DEFAULT_TEMPLATES);
+        const ptp = await store.get("se_post_trip_templates", DEFAULT_POST_TRIP_TEMPLATES);
         const ht  = await store.get("se_handover_templates", DEFAULT_HANDOVER_TEMPLATES);
         setTeam(teamData.length ? teamData : DEFAULT_TEAM);
         setVans(vansData.length ? vansData : DEFAULT_VANS);
@@ -2913,6 +2922,7 @@ export default function App() {
         setLogs(logsData);
         setPreDepartureProgress(predepData);
         setTemplates(tp);
+        setPostTripTemplates(ptp);
         setHandoverTemplates(ht);
       } catch (err) {
         console.error("Supabase load failed, falling back to localStorage:", err);
@@ -2920,11 +2930,12 @@ export default function App() {
         const v   = await store.get("se_vans", DEFAULT_VANS);
         const l   = await store.get("se_logs", []);
         const tp  = await store.get("se_templates", DEFAULT_TEMPLATES);
+        const ptp = await store.get("se_post_trip_templates", DEFAULT_POST_TRIP_TEMPLATES);
         const ht  = await store.get("se_handover_templates", DEFAULT_HANDOVER_TEMPLATES);
         const bk  = await store.get("se_bookings", []);
         const eq  = await store.get("se_equipment", DEFAULT_EQUIPMENT);
         const pdp = await store.get("se_predep_progress", {});
-        setTeam(t); setVans(v); setLogs(l); setTemplates(tp); setHandoverTemplates(ht);
+        setTeam(t); setVans(v); setLogs(l); setTemplates(tp); setPostTripTemplates(ptp); setHandoverTemplates(ht);
         setBookings(bk); setEquipment(eq); setPreDepartureProgress(pdp);
       }
       setLoaded(true);
@@ -2935,6 +2946,7 @@ export default function App() {
 
   // Templates stay in localStorage (rarely change, device-level config for now)
   useEffect(() => { if (loaded) store.set("se_templates", templates); }, [templates, loaded]);
+  useEffect(() => { if (loaded) store.set("se_post_trip_templates", postTripTemplates); }, [postTripTemplates, loaded]);
   useEffect(() => { if (loaded) store.set("se_handover_templates", handoverTemplates); }, [handoverTemplates, loaded]);
 
   // Vans: sync to Supabase whenever they change (status, mileage, last check dates etc.)
@@ -3080,7 +3092,7 @@ export default function App() {
       {tab === "vans" && <VanPanel vans={vans} onUpdate={v => { setVans(v); showToast("Fleet updated"); }} currentUser={user} />}
       {tab === "pre_departure" && <PreDeparturePanel vans={vans} templates={templates} onTemplatesChange={t => { setTemplates(t); showToast("Checklist updated"); }} user={user} onComplete={handlePreDepartureComplete} isAdmin={user.role === "admin"} savedProgress={preDepartureProgress} onProgressChange={(vanId, data) => { setPreDepartureProgress(prev => data === null ? (({ [vanId]: _, ...rest }) => rest)(prev) : { ...prev, [vanId]: data }); db.savePredepProgress(vanId, data); }} bookings={bookings} equipment={equipment} onBookingUpdate={handleBookingUpdate} />}
       {tab === "handover" && <HandoverPanel vans={vans} handoverTemplates={handoverTemplates} onHandoverTemplatesChange={ht => { setHandoverTemplates(ht); showToast("Walkthrough updated"); }} user={user} onComplete={handleHandoverComplete} isAdmin={user.role === "admin"} bookings={bookings} />}
-      {tab === "post_trip" && <PostTripPanel vans={vans} templates={templates} onTemplatesChange={t => { setTemplates(t); showToast("Checklist updated"); }} user={user} onComplete={handlePostTripComplete} isAdmin={user.role === "admin"} bookings={bookings} equipment={equipment} onBookingUpdate={handleBookingUpdate} />}
+      {tab === "post_trip" && <PostTripPanel vans={vans} templates={postTripTemplates} onTemplatesChange={t => { setPostTripTemplates(t); showToast("Checklist updated"); }} user={user} onComplete={handlePostTripComplete} isAdmin={user.role === "admin"} bookings={bookings} equipment={equipment} onBookingUpdate={handleBookingUpdate} />}
       {tab === "equipment" && <EquipmentPanel equipment={equipment} onEquipmentChange={handleEquipmentUpdate} rentals={[]} onRentalsChange={() => {}} user={user} isAdmin={user.role === "admin"} addLog={addLog} showToast={showToast} catalogueOnly={true} />}
       <Toast message={toast} />
     </div>
