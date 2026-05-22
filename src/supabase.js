@@ -205,7 +205,10 @@ export const db = {
   async saveVans(vans) {
     if (!vans?.length) return;
     const { error } = await supabase.from("vans").upsert(vans.map(toDbVan));
-    if (error) console.error("saveVans:", error.message);
+    if (error) {
+      console.error("saveVans:", error.message);
+      throw new Error(error.message);
+    }
   },
 
   // ── Bookings ──

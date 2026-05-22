@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -2902,9 +2902,6 @@ export default function App() {
   const [equipment, setEquipment] = useState(DEFAULT_EQUIPMENT);
   const [preDepartureProgress, setPreDepartureProgress] = useState({});
 
-  // Track whether initial load is complete so save effects don't fire on first render
-  const saveReady = useRef(false);
-
   useEffect(() => {
     (async () => {
       try {
@@ -2939,8 +2936,6 @@ export default function App() {
         setBookings(bk); setEquipment(eq); setPreDepartureProgress(pdp);
       }
       setLoaded(true);
-      // Allow save effects to fire from this point on
-      setTimeout(() => { saveReady.current = true; }, 200);
     })();
   }, []);
 
@@ -2949,10 +2944,11 @@ export default function App() {
   useEffect(() => { if (loaded) store.set("se_post_trip_templates", postTripTemplates); }, [postTripTemplates, loaded]);
   useEffect(() => { if (loaded) store.set("se_handover_templates", handoverTemplates); }, [handoverTemplates, loaded]);
 
-  // Vans: sync to Supabase whenever they change (status, mileage, last check dates etc.)
-  useEffect(() => { if (saveReady.current) db.saveVans(vans); }, [vans]);
-
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
+  const persistVans = (newVans) => {
+    setVans(newVans);
+    db.saveVans(newVans).catch(err => showToast(`Couldn't save van — ${err.message}`));
+  };
   const addLog = useCallback((action, vanName) => {
     if (!user) return;
     const entry = { who: user.name, action, van: vanName || "", date: new Date().toISOString() };
@@ -2962,7 +2958,7 @@ export default function App() {
 
   const handleLogin = (m) => { setUser(m); setPinTarget(null); localStorage.setItem("se_current_user", JSON.stringify(m)); showToast(`Welcome back, ${m.name}`); };
   const handleStatusChange = (vanId, s) => {
-    setVans(prev => prev.map(v => v.id === vanId ? { ...v, status: s } : v));
+    persistVans(vans.map(v => v.id === vanId ? { ...v, status: s } : v));
     addLog(`set status to ${statusLabel[s]}`, vans.find(v => v.id === vanId)?.name);
     showToast("Status updated");
   };
@@ -3015,7 +3011,7 @@ export default function App() {
 
   const handlePreDepartureComplete = (vanId, byName, notes, tyreData) => {
     const now = new Date().toISOString();
-    setVans(prev => prev.map(v => v.id === vanId ? { ...v, lastPreDeparture: { by: byName, date: now, notes, tyreData }, status: "available" } : v));
+    persistVans(vans.map(v => v.id === vanId ? { ...v, lastPreDeparture: { by: byName, date: now, notes, tyreData }, status: "available" } : v));
     setPreDepartureProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
     addLog("completed pre-departure check", vans.find(v => v.id === vanId)?.name);
     showToast(`Pre-departure complete for ${vans.find(v => v.id === vanId)?.name}`);
@@ -3023,7 +3019,7 @@ export default function App() {
   };
   const handleHandoverComplete = (vanId, byName, customerName, licenceNumber, depositCollected) => {
     const vanName = vans.find(v => v.id === vanId)?.name;
-    setVans(prev => prev.map(v => v.id === vanId ? { ...v, status: "on_rental" } : v));
+    persistVans(vans.map(v => v.id === vanId ? { ...v, status: "on_rental" } : v));
     addLog(`completed handover for ${customerName}`, vanName);
     showToast(`Handover complete — ${vanName} is now on rental`);
     setTab("dashboard");
@@ -3031,7 +3027,7 @@ export default function App() {
   const handlePostTripComplete = (vanId, byName, returnInfo, sectionNotes) => {
     const now = new Date().toISOString();
     const vanName = vans.find(v => v.id === vanId)?.name;
-    setVans(prev => prev.map(v => v.id === vanId ? {
+    persistVans(vans.map(v => v.id === vanId ? {
       ...v,
       lastPostTrip: { by: byName, date: now, mileage: returnInfo.mileage },
       mileage: returnInfo.mileage ? parseInt(returnInfo.mileage) : v.mileage,
@@ -3089,7 +3085,7 @@ export default function App() {
       {tab === "dashboard" && <Dashboard vans={vans} logs={logs} bookings={bookings} onSetStatus={handleStatusChange} preDepartureProgress={preDepartureProgress} />}
       {tab === "bookings" && <BookingsPanel vans={vans} bookings={bookings} onUpdate={handleBookingsUpdate} onBookingUpdate={handleBookingUpdate} isAdmin={user.role === "admin"} equipment={equipment} />}
       {tab === "team" && <TeamPanel team={team} onUpdate={handleTeamUpdate} currentUser={user} />}
-      {tab === "vans" && <VanPanel vans={vans} onUpdate={v => { setVans(v); showToast("Fleet updated"); }} currentUser={user} />}
+      {tab === "vans" && <VanPanel vans={vans} onUpdate={v => { persistVans(v); showToast("Fleet updated"); }} currentUser={user} />}
       {tab === "pre_departure" && <PreDeparturePanel vans={vans} templates={templates} onTemplatesChange={t => { setTemplates(t); showToast("Checklist updated"); }} user={user} onComplete={handlePreDepartureComplete} isAdmin={user.role === "admin"} savedProgress={preDepartureProgress} onProgressChange={(vanId, data) => { setPreDepartureProgress(prev => data === null ? (({ [vanId]: _, ...rest }) => rest)(prev) : { ...prev, [vanId]: data }); db.savePredepProgress(vanId, data); }} bookings={bookings} equipment={equipment} onBookingUpdate={handleBookingUpdate} />}
       {tab === "handover" && <HandoverPanel vans={vans} handoverTemplates={handoverTemplates} onHandoverTemplatesChange={ht => { setHandoverTemplates(ht); showToast("Walkthrough updated"); }} user={user} onComplete={handleHandoverComplete} isAdmin={user.role === "admin"} bookings={bookings} />}
       {tab === "post_trip" && <PostTripPanel vans={vans} templates={postTripTemplates} onTemplatesChange={t => { setPostTripTemplates(t); showToast("Checklist updated"); }} user={user} onComplete={handlePostTripComplete} isAdmin={user.role === "admin"} bookings={bookings} equipment={equipment} onBookingUpdate={handleBookingUpdate} />}
