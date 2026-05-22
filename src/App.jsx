@@ -2511,30 +2511,13 @@ export default function App() {
         const tp  = await store.get("se_templates", DEFAULT_TEMPLATES);
         const ht  = await store.get("se_handover_templates", DEFAULT_HANDOVER_TEMPLATES);
         setTeam(teamData.length ? teamData : DEFAULT_TEAM);
+        setVans(vansData.length ? vansData : DEFAULT_VANS);
         setBookings(bookingsData);
         setEquipment(equipmentData.length ? equipmentData : DEFAULT_EQUIPMENT);
         setLogs(logsData);
         setPreDepartureProgress(predepData);
         setTemplates(tp);
         setHandoverTemplates(ht);
-        // Auto-advance van statuses based on active bookings
-        const baseVans = vansData.length ? vansData : DEFAULT_VANS;
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        const autoVans = baseVans.map(van => {
-          if (van.status !== 'available') return van;
-          const hasActiveBooking = bookingsData.some(b => {
-            if (b.type !== 'van' || b.vanId !== van.id) return false;
-            const s = new Date(b.startDate); s.setHours(0, 0, 0, 0);
-            const e = new Date(b.endDate); e.setHours(0, 0, 0, 0);
-            return s <= today && e >= today;
-          });
-          return hasActiveBooking ? { ...van, status: 'on_rental' } : van;
-        });
-        // Save to Supabase if any statuses were auto-changed
-        if (autoVans.some((v, i) => v.status !== baseVans[i].status)) {
-          await db.saveVans(autoVans);
-        }
-        setVans(autoVans);
       } catch (err) {
         console.error("Supabase load failed, falling back to localStorage:", err);
         const t   = await store.get("se_team", DEFAULT_TEAM);
