@@ -10,10 +10,7 @@ export const supabase = createClient(
 export async function ensureSignedIn() {
   const { data: { session } } = await supabase.auth.getSession();
   if (session) return;
-  const { error } = await supabase.auth.signInWithPassword({
-    email: import.meta.env.VITE_IPAD_EMAIL,
-    password: import.meta.env.VITE_IPAD_PASSWORD,
-  });
+  const { error } = await supabase.auth.signInAnonymously();
   if (error) throw new Error("Supabase sign-in failed: " + error.message);
 }
 
