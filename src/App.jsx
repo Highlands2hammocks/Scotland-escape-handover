@@ -6,6 +6,26 @@ import { ensureSignedIn, db } from "./supabase.js";
 
 const APP_VERSION = "1.4.0";
 
+// ── Compliance checks ──────────────────────────────────────────
+const COMPLIANCE_STEPS = [
+  { key: "licenceFront",      label: "Driving licence — front received" },
+  { key: "licenceBack",       label: "Driving licence — back received" },
+  { key: "address1",          label: "Proof of address 1 (utility bill / bank statement)" },
+  { key: "address2",          label: "Proof of address 2 (utility bill / bank statement)" },
+  { key: "dvlaCodeRequested", label: "DVLA check code requested from customer" },
+  { key: "dvlaCheckDone",     label: "DVLA licence check completed" },
+];
+
+const getComplianceStatus = (compliance) => {
+  const done = COMPLIANCE_STEPS.filter(s => compliance?.[s.key]).length;
+  if (done === COMPLIANCE_STEPS.length) return "complete";
+  if (done > 0) return "partial";
+  return "empty";
+};
+
+const getComplianceMissing = (compliance) =>
+  COMPLIANCE_STEPS.filter(s => !compliance?.[s.key]).map(s => s.label);
+
 const genId = () => crypto.randomUUID();
 
 // ── Default checklist template for Freddy ──────────────────────
@@ -1030,6 +1050,80 @@ function TyreGrid({ data, onChange, vanTemplate }) {
   );
 }
 
+// ── Compliance checklist per booking ───────────────────────────
+function ComplianceChecks({ booking, onUpdate }) {
+  const [open, setOpen] = useState(false);
+  const compliance = booking.compliance || {};
+  const status = getComplianceStatus(compliance);
+  const done = COMPLIANCE_STEPS.filter(s => compliance[s.key]).length;
+  const total = COMPLIANCE_STEPS.length;
+
+  const toggle = (key) => onUpdate(booking.id, { compliance: { ...compliance, [key]: !compliance[key] } });
+  const setField = (key, val) => onUpdate(booking.id, { compliance: { ...compliance, [key]: val } });
+
+  const badgeStyle = {
+    complete: { color: "var(--success)", label: "✓ Compliant" },
+    partial:  { color: "var(--warning)", label: `${done}/${total} done` },
+    empty:    { color: "var(--text-muted)", label: "Not started" },
+  }[status];
+
+  return (
+    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", userSelect: "none" }}
+        onClick={() => setOpen(o => !o)}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>🔍 Documents & Licence Checks</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: badgeStyle.color }}>{badgeStyle.label}</span>
+        </div>
+        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{open ? "▲" : "▼"}</span>
+      </div>
+      {open && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          {COMPLIANCE_STEPS.map((step, i) => (
+            <div key={step.key} style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}
+              onClick={() => toggle(step.key)}>
+              <div className={`cl-checkbox ${compliance[step.key] ? "checked" : ""}`} style={{ flexShrink: 0, marginTop: 1 }}>
+                {compliance[step.key] && "✓"}
+              </div>
+              <span style={{ fontSize: 14, flex: 1, color: compliance[step.key] ? "var(--text-muted)" : "var(--text)", textDecoration: compliance[step.key] ? "line-through" : "none", lineHeight: 1.4 }}>
+                {i + 1}. {step.label}
+              </span>
+            </div>
+          ))}
+          {compliance.dvlaCheckDone && (
+            <div style={{ paddingLeft: 34 }}>
+              <input className="input" style={{ fontSize: 13 }}
+                value={compliance.dvlaResult || ""}
+                onChange={e => { e.stopPropagation(); setField("dvlaResult", e.target.value); }}
+                onClick={e => e.stopPropagation()}
+                placeholder="DVLA result — e.g. Clean, or note any endorsements / points" />
+            </div>
+          )}
+          <div>
+            <input className="input" style={{ fontSize: 13 }}
+              value={compliance.driveLink || ""}
+              onChange={e => { e.stopPropagation(); setField("driveLink", e.target.value); }}
+              onClick={e => e.stopPropagation()}
+              placeholder="📁 Google Drive folder link (optional)" />
+            {compliance.driveLink && (
+              <a href={compliance.driveLink} target="_blank" rel="noopener noreferrer"
+                style={{ display: "inline-block", marginTop: 6, fontSize: 12, color: "var(--accent)" }}
+                onClick={e => e.stopPropagation()}>
+                Open Drive folder →
+              </a>
+            )}
+          </div>
+          {status === "complete" && (
+            <div style={{ background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.3)", borderRadius: 6, padding: "8px 12px", fontSize: 13, color: "var(--success)", fontWeight: 500 }}>
+              ✓ All checks complete — van cleared for handover
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Sortable checklist item (drag-to-reorder, admin only) ──────
 function SortableCheckItem({ id, item, checked, onToggle, isAdmin, onEdit, showQty }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
@@ -1395,7 +1489,7 @@ function PreDeparturePanel({ vans, templates, onTemplatesChange, user, onComplet
 }
 
 // ── Handover ───────────────────────────────────────────────────
-function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, user, onComplete, isAdmin }) {
+function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, user, onComplete, isAdmin, bookings }) {
   const [step, setStep] = useState(0);
   const [selectedVan, setSelectedVan] = useState(null);
   const [customerName, setCustomerName] = useState("");
@@ -1507,6 +1601,14 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
 
   if (step === 1) {
     const docs = ["Licence (front)", "Licence (back)", "Proof of Address 1", "Proof of Address 2", "Signed Contract"];
+    // Find the most upcoming/current van booking to check compliance
+    const relatedBooking = (bookings || [])
+      .filter(b => b.type === "van" && b.vanId === selectedVan && !b.postChecksCompleted)
+      .sort((a, b) => Math.abs(new Date(a.startDate) - new Date()) - Math.abs(new Date(b.startDate) - new Date()))[0];
+    const compStatus = relatedBooking ? getComplianceStatus(relatedBooking.compliance) : null;
+    const missing = relatedBooking ? getComplianceMissing(relatedBooking.compliance) : [];
+    const isCompliant = compStatus === "complete";
+    const hasBooking = !!relatedBooking;
     return (
       <div className="content">
         <button className="back-btn" onClick={() => setStep(0)}>← Back</button>
@@ -1555,8 +1657,27 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
           </div>
         </div>
 
+        {hasBooking && !isCompliant && (
+          <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 8, padding: "14px 16px", marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, color: "var(--danger)", marginBottom: 8, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+              🔒 Compliance checks incomplete — van cannot go out
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 6 }}>Outstanding:</div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--text-dim)", display: "flex", flexDirection: "column", gap: 3 }}>
+              {missing.map(m => <li key={m}>{m}</li>)}
+            </ul>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 10 }}>
+              Update checks in the <strong>Bookings</strong> tab, or contact your VA.
+            </div>
+          </div>
+        )}
+        {!hasBooking && (
+          <div style={{ background: "rgba(232,185,64,0.1)", border: "1px solid rgba(232,185,64,0.3)", borderRadius: 8, padding: "12px 16px", marginBottom: 12, fontSize: 13, color: "var(--warning)" }}>
+            ⚠️ No booking found for {van?.name} — verify compliance checks are complete before proceeding.
+          </div>
+        )}
         <button className="btn btn-primary" style={{ width: "100%" }}
-          disabled={!customerName.trim() || !licenceNumber.trim()}
+          disabled={!customerName.trim() || !licenceNumber.trim() || (hasBooking && !isCompliant)}
           onClick={() => setStep(2)}>
           Continue to Van Walkthrough →
         </button>
@@ -2113,7 +2234,7 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
 }
 
 // ── Bookings ───────────────────────────────────────────────────
-function BookingsPanel({ vans, bookings, onUpdate, isAdmin, equipment }) {
+function BookingsPanel({ vans, bookings, onUpdate, onBookingUpdate, isAdmin, equipment }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({
     type: "van", vanId: "", clientName: "", guests: "2",
@@ -2227,6 +2348,7 @@ function BookingsPanel({ vans, bookings, onUpdate, isAdmin, equipment }) {
           </div>
         )}
         {b.notes && <div className="booking-notes">{b.notes}</div>}
+        {b.type === "van" && onBookingUpdate && <ComplianceChecks booking={b} onUpdate={onBookingUpdate} />}
       </div>
     );
   };
@@ -2902,11 +3024,11 @@ export default function App() {
       </div>
       <div className="nav">{tabs.map(t => <button key={t.id} className={`nav-btn ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       {tab === "dashboard" && <Dashboard vans={vans} logs={logs} bookings={bookings} onSetStatus={handleStatusChange} preDepartureProgress={preDepartureProgress} />}
-      {tab === "bookings" && <BookingsPanel vans={vans} bookings={bookings} onUpdate={handleBookingsUpdate} isAdmin={user.role === "admin"} equipment={equipment} />}
+      {tab === "bookings" && <BookingsPanel vans={vans} bookings={bookings} onUpdate={handleBookingsUpdate} onBookingUpdate={handleBookingUpdate} isAdmin={user.role === "admin"} equipment={equipment} />}
       {tab === "team" && <TeamPanel team={team} onUpdate={handleTeamUpdate} currentUser={user} />}
       {tab === "vans" && <VanPanel vans={vans} onUpdate={v => { setVans(v); showToast("Fleet updated"); }} currentUser={user} />}
       {tab === "pre_departure" && <PreDeparturePanel vans={vans} templates={templates} onTemplatesChange={t => { setTemplates(t); showToast("Checklist updated"); }} user={user} onComplete={handlePreDepartureComplete} isAdmin={user.role === "admin"} savedProgress={preDepartureProgress} onProgressChange={(vanId, data) => { setPreDepartureProgress(prev => data === null ? (({ [vanId]: _, ...rest }) => rest)(prev) : { ...prev, [vanId]: data }); db.savePredepProgress(vanId, data); }} bookings={bookings} equipment={equipment} onBookingUpdate={handleBookingUpdate} />}
-      {tab === "handover" && <HandoverPanel vans={vans} handoverTemplates={handoverTemplates} onHandoverTemplatesChange={ht => { setHandoverTemplates(ht); showToast("Walkthrough updated"); }} user={user} onComplete={handleHandoverComplete} isAdmin={user.role === "admin"} />}
+      {tab === "handover" && <HandoverPanel vans={vans} handoverTemplates={handoverTemplates} onHandoverTemplatesChange={ht => { setHandoverTemplates(ht); showToast("Walkthrough updated"); }} user={user} onComplete={handleHandoverComplete} isAdmin={user.role === "admin"} bookings={bookings} />}
       {tab === "post_trip" && <PostTripPanel vans={vans} templates={templates} onTemplatesChange={t => { setTemplates(t); showToast("Checklist updated"); }} user={user} onComplete={handlePostTripComplete} isAdmin={user.role === "admin"} bookings={bookings} equipment={equipment} onBookingUpdate={handleBookingUpdate} />}
       {tab === "equipment" && <EquipmentPanel equipment={equipment} onEquipmentChange={handleEquipmentUpdate} rentals={[]} onRentalsChange={() => {}} user={user} isAdmin={user.role === "admin"} addLog={addLog} showToast={showToast} catalogueOnly={true} />}
       <Toast message={toast} />

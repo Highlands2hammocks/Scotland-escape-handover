@@ -80,6 +80,7 @@ const fromDbBooking = r => ({
   postChecksCompleted: r.post_checks_completed || false,
   postChecksBy: r.post_checks_by || null,
   postChecksAt: r.post_checks_at || null,
+  compliance: r.compliance || {},
 });
 
 const toDbBooking = b => ({
@@ -100,6 +101,7 @@ const toDbBooking = b => ({
   post_checks_completed: b.postChecksCompleted || false,
   post_checks_by: b.postChecksBy || null,
   post_checks_at: b.postChecksAt || null,
+  compliance: b.compliance || {},
 });
 
 const fromDbEquipment = r => ({
