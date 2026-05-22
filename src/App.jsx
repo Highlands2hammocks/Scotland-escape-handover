@@ -362,7 +362,7 @@ const DEFAULT_HANDOVER_TEMPLATES = {
       id: "ho_ext", section: "Exterior & Tyres", icon: "🚐", videoUrl: "",
       items: [
         { id: "hoe1", label: "Walk around van — note any pre-existing damage with customer" },
-        { id: "hoe2", label: "Show tyre condition and correct pressures (35 PSI all round)" },
+        { id: "hoe2", label: "Show tyre condition and correct pressures (50 PSI / 3.5 bar all round)" },
         { id: "hoe3", label: "Show 230v hook-up receptor (rear, under door)" },
         { id: "hoe4", label: "Show reversing camera display in cab" },
       ],
@@ -1010,42 +1010,93 @@ function VanPanel({ vans, onUpdate, currentUser }) {
 // ── Tyre check grid (shared between pre-departure and post-trip) ─
 const TYRE_SECTION_IDS = new Set(["check_exterior", "d_check_exterior"]);
 
-function TyreGrid({ data, onChange, vanTemplate }) {
+const TYRE_MIN_PSI   = 50;   // 3.5 bar
+const TYRE_MIN_TREAD = 2;    // mm legal + safety minimum
+
+function TyreGrid({ data, onChange }) {
   const positions = [
     { key: "fl", label: "Front Left" },
     { key: "fr", label: "Front Right" },
     { key: "rl", label: "Rear Left" },
     { key: "rr", label: "Rear Right" },
   ];
-  const hint = vanTemplate === "freddy" ? " (target: 35 PSI)" : "";
+
+  const failingPsi   = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_psi`]);   return !isNaN(v) && v < TYRE_MIN_PSI;   });
+  const failingTread = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_tread`]); return !isNaN(v) && v < TYRE_MIN_TREAD; });
+  const hasFailures  = failingPsi.length > 0 || failingTread.length > 0;
+
   return (
     <div style={{ padding: "12px 20px 8px", borderTop: "1px solid var(--border)" }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>
-        🔵 Tyre Readings{hint}
+      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 2 }}>
+        🔵 Tyre Readings
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+        Minimums: {TYRE_MIN_PSI} PSI / 3.5 bar pressure · {TYRE_MIN_TREAD}mm tread depth
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        {positions.map(({ key, label }) => (
-          <div key={key} style={{ background: "var(--bg3)", borderRadius: 8, padding: "10px 12px" }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", marginBottom: 8 }}>{label}</div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 3 }}>PSI</div>
-                <input className="input" style={{ textAlign: "center", fontSize: 14, padding: "6px 8px" }}
-                  value={data[`${key}_psi`] || ""}
-                  onChange={e => onChange({ ...data, [`${key}_psi`]: e.target.value.replace(/[^\d.]/g, "") })}
-                  placeholder="—" inputMode="decimal" />
+        {positions.map(({ key, label }) => {
+          const psiVal   = data[`${key}_psi`]   || "";
+          const treadVal = data[`${key}_tread`] || "";
+          const psiNum   = parseFloat(psiVal);
+          const treadNum = parseFloat(treadVal);
+          const psiFail   = !isNaN(psiNum)   && psiNum   < TYRE_MIN_PSI;
+          const treadFail = !isNaN(treadNum) && treadNum < TYRE_MIN_TREAD;
+          const anyFail   = psiFail || treadFail;
+          return (
+            <div key={key} style={{
+              background: anyFail ? "rgba(239,68,68,0.07)" : "var(--bg3)",
+              borderRadius: 8, padding: "10px 12px",
+              border: `1px solid ${anyFail ? "rgba(239,68,68,0.4)" : "transparent"}`,
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 8, color: anyFail ? "var(--danger)" : "var(--text-muted)" }}>
+                {label}{anyFail ? " ⚠" : ""}
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 3 }}>Tread (mm)</div>
-                <input className="input" style={{ textAlign: "center", fontSize: 14, padding: "6px 8px" }}
-                  value={data[`${key}_tread`] || ""}
-                  onChange={e => onChange({ ...data, [`${key}_tread`]: e.target.value.replace(/[^\d.]/g, "") })}
-                  placeholder="—" inputMode="decimal" />
+              <div style={{ display: "flex", gap: 6 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, marginBottom: 3, color: psiFail ? "var(--danger)" : "var(--text-muted)", fontWeight: psiFail ? 600 : 400 }}>
+                    PSI{psiFail ? ` < ${TYRE_MIN_PSI}!` : ""}
+                  </div>
+                  <input className="input" inputMode="decimal" placeholder="—"
+                    value={psiVal}
+                    onChange={e => onChange({ ...data, [`${key}_psi`]: e.target.value.replace(/[^\d.]/g, "") })}
+                    style={{ textAlign: "center", fontSize: 14, padding: "6px 8px",
+                      borderColor: psiFail ? "var(--danger)" : undefined,
+                      color:       psiFail ? "var(--danger)" : undefined }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, marginBottom: 3, color: treadFail ? "var(--danger)" : "var(--text-muted)", fontWeight: treadFail ? 600 : 400 }}>
+                    Tread mm{treadFail ? ` < ${TYRE_MIN_TREAD}!` : ""}
+                  </div>
+                  <input className="input" inputMode="decimal" placeholder="—"
+                    value={treadVal}
+                    onChange={e => onChange({ ...data, [`${key}_tread`]: e.target.value.replace(/[^\d.]/g, "") })}
+                    style={{ textAlign: "center", fontSize: 14, padding: "6px 8px",
+                      borderColor: treadFail ? "var(--danger)" : undefined,
+                      color:       treadFail ? "var(--danger)" : undefined }} />
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
+      {hasFailures && (
+        <div style={{ marginTop: 10, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 8, padding: "10px 14px" }}>
+          <div style={{ fontWeight: 700, color: "var(--danger)", fontSize: 13, marginBottom: 6 }}>⚠️ Tyre readings below safe minimum</div>
+          {failingPsi.length > 0 && (
+            <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 2 }}>
+              Low pressure ({TYRE_MIN_PSI} PSI / 3.5 bar min): {failingPsi.map(p => p.label).join(", ")}
+            </div>
+          )}
+          {failingTread.length > 0 && (
+            <div style={{ fontSize: 12, color: "var(--danger)" }}>
+              Low tread ({TYRE_MIN_TREAD}mm min): {failingTread.map(p => p.label).join(", ")}
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8, fontWeight: 500 }}>
+            Van must not go out until all tyres are within safe limits.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
