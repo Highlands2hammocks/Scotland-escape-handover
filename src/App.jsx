@@ -1052,6 +1052,17 @@ function SortableCheckItem({ id, item, checked, onToggle, isAdmin, onEdit, showQ
   );
 }
 
+// ── Sortable section wrapper (admin drag-to-reorder) ───────────
+function SortableSection({ id, isAdmin, render }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const dragHandleProps = isAdmin ? { ...attributes, ...listeners, onClick: e => e.stopPropagation(), style: { cursor: "grab", touchAction: "none", color: "var(--text-muted)", fontSize: 20, padding: "0 8px 0 0", flexShrink: 0, lineHeight: 1, userSelect: "none" } } : null;
+  return (
+    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.35 : 1 }}>
+      {render(dragHandleProps)}
+    </div>
+  );
+}
+
 // ── Pre-departure Checklist ────────────────────────────────────
 function PreDeparturePanel({ vans, templates, onTemplatesChange, user, onComplete, isAdmin, savedProgress, onProgressChange, bookings, equipment, onBookingUpdate }) {
   const [selectedVan, setSelectedVan] = useState(null);
@@ -1145,6 +1156,16 @@ function PreDeparturePanel({ vans, templates, onTemplatesChange, user, onComplet
     if (!van) return;
     const tKey = van.checklistTemplate;
     onTemplatesChange({ ...templates, [tKey]: (templates[tKey] || []).filter(s => s.id !== sectionId) });
+  };
+
+  const handleSectionDragEnd = ({ active, over }) => {
+    if (!active || !over || active.id === over.id || !van) return;
+    const tKey = van.checklistTemplate;
+    const secs = templates[tKey] || [];
+    const oi = secs.findIndex(s => s.id === active.id);
+    const ni = secs.findIndex(s => s.id === over.id);
+    if (oi === -1 || ni === -1) return;
+    onTemplatesChange({ ...templates, [tKey]: arrayMove(secs, oi, ni) });
   };
 
   if (eqBookingId && eqBooking) {
@@ -1294,53 +1315,60 @@ function PreDeparturePanel({ vans, templates, onTemplatesChange, user, onComplet
         <div className="cl-progress-bar-bg"><div className="cl-progress-bar" style={{ width: `${pct}%` }} /></div>
         <span className="cl-progress-text"><span className="cl-progress-pct">{pct}%</span> ({checkedCount}/{totalCount})</span>
       </div>
-      <div className="cl-sections">{tpl.map(section => {
-        const sChecked = section.items.filter(it => checked[it.id]).length;
-        const sTotal = section.items.length;
-        const isOpen = expanded[section.id] !== false;
-        const badge = sChecked === sTotal && sTotal > 0 ? "complete" : sChecked > 0 ? "partial" : "empty";
-        return (
-          <div key={section.id} className="cl-section">
-            <div className="cl-section-header" onClick={() => toggleSection(section.id)}>
-              <div className="cl-section-left">
-                <span className="cl-section-icon">{section.icon}</span>
-                <div><div className="cl-section-name">{section.section}</div><div className="cl-section-count">{sChecked} of {sTotal} complete</div></div>
-              </div>
-              <span className={`cl-section-badge ${badge}`}>{badge === "complete" ? "✓ Done" : badge === "partial" ? "In progress" : "Not started"}</span>
-            </div>
-            {isOpen && (
-              <div className="cl-items">
-                <DndContext sensors={sensors} collisionDetection={closestCenter}
-                  onDragEnd={({ active, over }) => {
-                    if (!active || !over || active.id === over.id || !van) return;
-                    const tKey = van.checklistTemplate;
-                    const secs = templates[tKey] || [];
-                    const sec = secs.find(s => s.id === section.id);
-                    if (!sec) return;
-                    const oi = sec.items.findIndex(i => i.id === active.id);
-                    const ni = sec.items.findIndex(i => i.id === over.id);
-                    onTemplatesChange({ ...templates, [tKey]: secs.map(s => s.id === section.id ? { ...s, items: arrayMove(sec.items, oi, ni) } : s) });
-                  }}>
-                  <SortableContext items={section.items.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                    {section.items.map(item => (
-                      <SortableCheckItem key={item.id} id={item.id} item={item}
-                        checked={!!checked[item.id]} onToggle={toggleItem} isAdmin={isAdmin} showQty={true}
-                        onEdit={() => { setEditForm({ label: item.label, qty: item.qty !== null ? String(item.qty) : "" }); setEditModal({ type: "edit", sectionId: section.id, itemId: item.id }); }} />
-                    ))}
-                  </SortableContext>
-                </DndContext>
-                {TYRE_SECTION_IDS.has(section.id) && (
-                  <TyreGrid data={tyreData} onChange={setTyreData} vanTemplate={van?.checklistTemplate} />
-                )}
-                {isAdmin && <div style={{ padding: "8px 20px", display: "flex", gap: 8 }}>
-                  <button className="btn btn-secondary btn-sm" onClick={() => { setEditForm({ label: "", qty: "" }); setEditModal({ type: "add", sectionId: section.id }); }}>+ Add item</button>
-                  <button className="btn btn-danger btn-sm" onClick={() => deleteSection(section.id)}>Remove section</button>
-                </div>}
-              </div>
-            )}
-          </div>
-        );
-      })}</div>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
+        <SortableContext items={tpl.map(s => s.id)} strategy={verticalListSortingStrategy}>
+          <div className="cl-sections">{tpl.map(section => {
+            const sChecked = section.items.filter(it => checked[it.id]).length;
+            const sTotal = section.items.length;
+            const isOpen = expanded[section.id] !== false;
+            const badge = sChecked === sTotal && sTotal > 0 ? "complete" : sChecked > 0 ? "partial" : "empty";
+            return (
+              <SortableSection key={section.id} id={section.id} isAdmin={isAdmin} render={dragHandleProps => (
+                <div className="cl-section">
+                  <div className="cl-section-header" onClick={() => toggleSection(section.id)}>
+                    <div className="cl-section-left">
+                      {dragHandleProps && <span {...dragHandleProps}>⠿</span>}
+                      <span className="cl-section-icon">{section.icon}</span>
+                      <div><div className="cl-section-name">{section.section}</div><div className="cl-section-count">{sChecked} of {sTotal} complete</div></div>
+                    </div>
+                    <span className={`cl-section-badge ${badge}`}>{badge === "complete" ? "✓ Done" : badge === "partial" ? "In progress" : "Not started"}</span>
+                  </div>
+                  {isOpen && (
+                    <div className="cl-items">
+                      <DndContext sensors={sensors} collisionDetection={closestCenter}
+                        onDragEnd={({ active, over }) => {
+                          if (!active || !over || active.id === over.id || !van) return;
+                          const tKey = van.checklistTemplate;
+                          const secs = templates[tKey] || [];
+                          const sec = secs.find(s => s.id === section.id);
+                          if (!sec) return;
+                          const oi = sec.items.findIndex(i => i.id === active.id);
+                          const ni = sec.items.findIndex(i => i.id === over.id);
+                          onTemplatesChange({ ...templates, [tKey]: secs.map(s => s.id === section.id ? { ...s, items: arrayMove(sec.items, oi, ni) } : s) });
+                        }}>
+                        <SortableContext items={section.items.map(i => i.id)} strategy={verticalListSortingStrategy}>
+                          {section.items.map(item => (
+                            <SortableCheckItem key={item.id} id={item.id} item={item}
+                              checked={!!checked[item.id]} onToggle={toggleItem} isAdmin={isAdmin} showQty={true}
+                              onEdit={() => { setEditForm({ label: item.label, qty: item.qty !== null ? String(item.qty) : "" }); setEditModal({ type: "edit", sectionId: section.id, itemId: item.id }); }} />
+                          ))}
+                        </SortableContext>
+                      </DndContext>
+                      {TYRE_SECTION_IDS.has(section.id) && (
+                        <TyreGrid data={tyreData} onChange={setTyreData} vanTemplate={van?.checklistTemplate} />
+                      )}
+                      {isAdmin && <div style={{ padding: "8px 20px", display: "flex", gap: 8 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => { setEditForm({ label: "", qty: "" }); setEditModal({ type: "add", sectionId: section.id }); }}>+ Add item</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => deleteSection(section.id)}>Remove section</button>
+                      </div>}
+                    </div>
+                  )}
+                </div>
+              )} />
+            );
+          })}</div>
+        </SortableContext>
+      </DndContext>
       {isAdmin && <div style={{ marginTop: 16 }}><button className="btn btn-secondary btn-sm" onClick={() => setSectionModal(true)}>+ Add Section</button></div>}
       {allDone && <div className="cl-complete-banner"><h3>✓ All checks complete</h3><p>{van?.name} is ready for handover</p></div>}
       <div className="mgmt-field" style={{ marginTop: 20 }}><label className="mgmt-label">Notes (optional)</label><input className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any issues or observations..." /></div>
@@ -1435,6 +1463,25 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
     const tKey = van.checklistTemplate;
     onHandoverTemplatesChange({ ...handoverTemplates, [tKey]: (handoverTemplates[tKey] || []).filter(s => s.id !== sectionId) });
     setStep(1);
+  };
+
+  const moveSectionUp = (sectionId) => {
+    if (!van) return;
+    const tKey = van.checklistTemplate;
+    const secs = handoverTemplates[tKey] || [];
+    const idx = secs.findIndex(s => s.id === sectionId);
+    if (idx <= 0) return;
+    onHandoverTemplatesChange({ ...handoverTemplates, [tKey]: arrayMove(secs, idx, idx - 1) });
+    setStep(s => s - 1);
+  };
+  const moveSectionDown = (sectionId) => {
+    if (!van) return;
+    const tKey = van.checklistTemplate;
+    const secs = handoverTemplates[tKey] || [];
+    const idx = secs.findIndex(s => s.id === sectionId);
+    if (idx >= secs.length - 1) return;
+    onHandoverTemplatesChange({ ...handoverTemplates, [tKey]: arrayMove(secs, idx, idx + 1) });
+    setStep(s => s + 1);
   };
 
   const handleComplete = () => {
@@ -1572,10 +1619,20 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
           <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <span style={{ fontSize: 28 }}>{currentSection.icon}</span>
-              <div>
+              <div style={{ flex: 1 }}>
                 <div className="cl-section-name">{currentSection.section}</div>
                 <div className="cl-section-count">{sChecked} of {sTotal} confirmed</div>
               </div>
+              {isAdmin && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <button className="btn btn-secondary btn-sm" style={{ padding: "3px 10px", fontSize: 13, lineHeight: 1 }}
+                    onClick={() => moveSectionUp(currentSection.id)}
+                    disabled={currentSectionIdx === 0} title="Move section earlier">↑</button>
+                  <button className="btn btn-secondary btn-sm" style={{ padding: "3px 10px", fontSize: 13, lineHeight: 1 }}
+                    onClick={() => moveSectionDown(currentSection.id)}
+                    disabled={currentSectionIdx === tpl.length - 1} title="Move section later">↓</button>
+                </div>
+              )}
             </div>
           </div>
           <div className="cl-items" style={{ borderTop: "none" }}>
@@ -1774,6 +1831,16 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
     onTemplatesChange({ ...templates, [tKey]: (templates[tKey] || []).filter(s => s.id !== sectionId) });
   };
 
+  const handleSectionDragEnd = ({ active, over }) => {
+    if (!active || !over || active.id === over.id || !van || !onTemplatesChange) return;
+    const tKey = van.checklistTemplate;
+    const secs = templates[tKey] || [];
+    const oi = secs.findIndex(s => s.id === active.id);
+    const ni = secs.findIndex(s => s.id === over.id);
+    if (oi === -1 || ni === -1) return;
+    onTemplatesChange({ ...templates, [tKey]: arrayMove(secs, oi, ni) });
+  };
+
   if (eqBookingId && eqBooking) return (
     <div className="content">
       <button className="back-btn" onClick={() => { setEqBookingId(null); setEqChecked({}); setEqNotes(""); setEqExpanded({}); }}>← Back to selection</button>
@@ -1911,80 +1978,87 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
         <span className="cl-progress-text"><span className="cl-progress-pct">{pct}%</span> ({checkedCount}/{totalCount})</span>
       </div>
 
-      <div className="cl-sections">
-        {tpl.map(section => {
-          const sChecked = section.items.filter(it => checked[it.id]).length;
-          const sTotal = section.items.length;
-          const isOpen = expanded[section.id] !== false;
-          const badge = sChecked === sTotal && sTotal > 0 ? "complete" : sChecked > 0 ? "partial" : "empty";
-          const canPhoto = PHOTO_SECTIONS.has(section.id);
-          const photoCount = photosMap[section.id] || 0;
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
+        <SortableContext items={tpl.map(s => s.id)} strategy={verticalListSortingStrategy}>
+          <div className="cl-sections">
+            {tpl.map(section => {
+              const sChecked = section.items.filter(it => checked[it.id]).length;
+              const sTotal = section.items.length;
+              const isOpen = expanded[section.id] !== false;
+              const badge = sChecked === sTotal && sTotal > 0 ? "complete" : sChecked > 0 ? "partial" : "empty";
+              const canPhoto = PHOTO_SECTIONS.has(section.id);
+              const photoCount = photosMap[section.id] || 0;
 
-          return (
-            <div key={section.id} className="cl-section">
-              <div className="cl-section-header" onClick={() => setExpanded(p => ({ ...p, [section.id]: !isOpen }))}>
-                <div className="cl-section-left">
-                  <span className="cl-section-icon">{section.icon}</span>
-                  <div>
-                    <div className="cl-section-name">{section.section}</div>
-                    <div className="cl-section-count">{sChecked} of {sTotal} checked</div>
-                  </div>
-                </div>
-                <span className={`cl-section-badge ${badge}`}>
-                  {badge === "complete" ? "✓ Done" : badge === "partial" ? "In progress" : "Not started"}
-                </span>
-              </div>
-              {isOpen && (
-                <div className="cl-items">
-                  <DndContext sensors={sensors} collisionDetection={closestCenter}
-                    onDragEnd={({ active, over }) => {
-                      if (!active || !over || active.id === over.id || !van || !isAdmin || !onTemplatesChange) return;
-                      const tKey = van.checklistTemplate;
-                      const secs = templates[tKey] || [];
-                      const sec = secs.find(s => s.id === section.id);
-                      if (!sec) return;
-                      const oi = sec.items.findIndex(i => i.id === active.id);
-                      const ni = sec.items.findIndex(i => i.id === over.id);
-                      onTemplatesChange({ ...templates, [tKey]: secs.map(s => s.id === section.id ? { ...s, items: arrayMove(sec.items, oi, ni) } : s) });
-                    }}>
-                    <SortableContext items={section.items.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                      {section.items.map(item => (
-                        <SortableCheckItem key={item.id} id={item.id} item={item}
-                          checked={!!checked[item.id]}
-                          onToggle={id => setChecked(p => ({ ...p, [id]: !p[id] }))}
-                          isAdmin={isAdmin} showQty={true}
-                          onEdit={() => { setEditForm({ label: item.label, qty: item.qty !== null ? String(item.qty) : "" }); setEditModal({ type: "edit", sectionId: section.id, itemId: item.id }); }} />
-                      ))}
-                    </SortableContext>
-                    {isAdmin && onTemplatesChange && (
-                      <div style={{ padding: "8px 20px", display: "flex", gap: 8 }}>
-                        <button className="btn btn-secondary btn-sm" onClick={() => { setEditForm({ label: "", qty: "" }); setEditModal({ type: "add", sectionId: section.id }); }}>+ Add item</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => deleteSection(section.id)}>Remove section</button>
+              return (
+                <SortableSection key={section.id} id={section.id} isAdmin={isAdmin} render={dragHandleProps => (
+                  <div className="cl-section">
+                    <div className="cl-section-header" onClick={() => setExpanded(p => ({ ...p, [section.id]: !isOpen }))}>
+                      <div className="cl-section-left">
+                        {dragHandleProps && <span {...dragHandleProps}>⠿</span>}
+                        <span className="cl-section-icon">{section.icon}</span>
+                        <div>
+                          <div className="cl-section-name">{section.section}</div>
+                          <div className="cl-section-count">{sChecked} of {sTotal} checked</div>
+                        </div>
+                      </div>
+                      <span className={`cl-section-badge ${badge}`}>
+                        {badge === "complete" ? "✓ Done" : badge === "partial" ? "In progress" : "Not started"}
+                      </span>
+                    </div>
+                    {isOpen && (
+                      <div className="cl-items">
+                        <DndContext sensors={sensors} collisionDetection={closestCenter}
+                          onDragEnd={({ active, over }) => {
+                            if (!active || !over || active.id === over.id || !van || !isAdmin || !onTemplatesChange) return;
+                            const tKey = van.checklistTemplate;
+                            const secs = templates[tKey] || [];
+                            const sec = secs.find(s => s.id === section.id);
+                            if (!sec) return;
+                            const oi = sec.items.findIndex(i => i.id === active.id);
+                            const ni = sec.items.findIndex(i => i.id === over.id);
+                            onTemplatesChange({ ...templates, [tKey]: secs.map(s => s.id === section.id ? { ...s, items: arrayMove(sec.items, oi, ni) } : s) });
+                          }}>
+                          <SortableContext items={section.items.map(i => i.id)} strategy={verticalListSortingStrategy}>
+                            {section.items.map(item => (
+                              <SortableCheckItem key={item.id} id={item.id} item={item}
+                                checked={!!checked[item.id]}
+                                onToggle={id => setChecked(p => ({ ...p, [id]: !p[id] }))}
+                                isAdmin={isAdmin} showQty={true}
+                                onEdit={() => { setEditForm({ label: item.label, qty: item.qty !== null ? String(item.qty) : "" }); setEditModal({ type: "edit", sectionId: section.id, itemId: item.id }); }} />
+                            ))}
+                          </SortableContext>
+                        </DndContext>
+                        {TYRE_SECTION_IDS.has(section.id) && (
+                          <TyreGrid data={tyreData} onChange={setTyreData} vanTemplate={van?.checklistTemplate} />
+                        )}
+                        <div style={{ padding: "10px 20px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                          {canPhoto && (
+                            <label className={`photo-btn ${photoCount > 0 ? "has-photos" : ""}`}>
+                              📷 {photoCount > 0 ? `${photoCount} photo${photoCount > 1 ? "s" : ""} taken` : "Take photos of this section"}
+                              <input type="file" accept="image/*" capture="environment" multiple style={{ display: "none" }}
+                                onChange={e => setPhotosMap(p => ({ ...p, [section.id]: (p[section.id] || 0) + e.target.files.length }))} />
+                            </label>
+                          )}
+                          <input className="input section-notes-input"
+                            value={sectionNotes[section.id] || ""}
+                            onChange={e => setSectionNotes(p => ({ ...p, [section.id]: e.target.value }))}
+                            placeholder="Note any issues in this section..." />
+                        </div>
+                        {isAdmin && onTemplatesChange && (
+                          <div style={{ padding: "8px 20px", display: "flex", gap: 8 }}>
+                            <button className="btn btn-secondary btn-sm" onClick={() => { setEditForm({ label: "", qty: "" }); setEditModal({ type: "add", sectionId: section.id }); }}>+ Add item</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => deleteSection(section.id)}>Remove section</button>
+                          </div>
+                        )}
                       </div>
                     )}
-                  </DndContext>
-                  {TYRE_SECTION_IDS.has(section.id) && (
-                    <TyreGrid data={tyreData} onChange={setTyreData} vanTemplate={van?.checklistTemplate} />
-                  )}
-                  <div style={{ padding: "10px 20px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-                    {canPhoto && (
-                      <label className={`photo-btn ${photoCount > 0 ? "has-photos" : ""}`}>
-                        📷 {photoCount > 0 ? `${photoCount} photo${photoCount > 1 ? "s" : ""} taken` : "Take photos of this section"}
-                        <input type="file" accept="image/*" capture="environment" multiple style={{ display: "none" }}
-                          onChange={e => setPhotosMap(p => ({ ...p, [section.id]: (p[section.id] || 0) + e.target.files.length }))} />
-                      </label>
-                    )}
-                    <input className="input section-notes-input"
-                      value={sectionNotes[section.id] || ""}
-                      onChange={e => setSectionNotes(p => ({ ...p, [section.id]: e.target.value }))}
-                      placeholder="Note any issues in this section..." />
                   </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                )} />
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
 
       {isAdmin && onTemplatesChange && (
         <div style={{ marginTop: 8 }}>
