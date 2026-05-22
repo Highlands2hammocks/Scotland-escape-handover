@@ -1377,6 +1377,10 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
   const [checked, setChecked] = useState({});
   const [sectionNotes, setSectionNotes] = useState({});
   const [videoEditModal, setVideoEditModal] = useState(null);
+  const [editModal, setEditModal] = useState(null);
+  const [editForm, setEditForm] = useState({ label: "" });
+  const [sectionModal, setSectionModal] = useState(false);
+  const [newSec, setNewSec] = useState({ name: "", icon: "📋" });
 
   const van = vans.find(v => v.id === selectedVan);
   const tpl = van ? (handoverTemplates[van.checklistTemplate] || []) : [];
@@ -1399,6 +1403,38 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
   const resetAll = () => {
     setStep(0); setSelectedVan(null); setCustomerName(""); setLicenceNumber("");
     setDepositCollected(false); setDocsDone({}); setChecked({}); setSectionNotes({});
+  };
+
+  const saveHandoverItem = () => {
+    if (!editModal || !van || !editForm.label.trim()) return;
+    const tKey = van.checklistTemplate;
+    const upd = (handoverTemplates[tKey] || []).map(s => {
+      if (s.id !== editModal.sectionId) return s;
+      if (editModal.type === "add") return { ...s, items: [...s.items, { id: genId(), label: editForm.label.trim() }] };
+      return { ...s, items: s.items.map(it => it.id === editModal.itemId ? { ...it, label: editForm.label.trim() } : it) };
+    });
+    onHandoverTemplatesChange({ ...handoverTemplates, [tKey]: upd });
+    setEditModal(null);
+  };
+  const deleteHandoverItem = () => {
+    if (!editModal || !van) return;
+    const tKey = van.checklistTemplate;
+    const upd = (handoverTemplates[tKey] || []).map(s => s.id === editModal.sectionId ? { ...s, items: s.items.filter(it => it.id !== editModal.itemId) } : s);
+    onHandoverTemplatesChange({ ...handoverTemplates, [tKey]: upd });
+    setEditModal(null);
+  };
+  const saveNewHandoverSection = () => {
+    if (!van || !newSec.name.trim()) return;
+    const tKey = van.checklistTemplate;
+    onHandoverTemplatesChange({ ...handoverTemplates, [tKey]: [...(handoverTemplates[tKey] || []), { id: genId(), section: newSec.name.trim(), icon: newSec.icon || "📋", items: [] }] });
+    setSectionModal(false);
+    setNewSec({ name: "", icon: "📋" });
+  };
+  const deleteHandoverSection = (sectionId) => {
+    if (!van) return;
+    const tKey = van.checklistTemplate;
+    onHandoverTemplatesChange({ ...handoverTemplates, [tKey]: (handoverTemplates[tKey] || []).filter(s => s.id !== sectionId) });
+    setStep(1);
   };
 
   const handleComplete = () => {
@@ -1549,9 +1585,16 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
                   <SortableCheckItem key={item.id} id={item.id} item={item}
                     checked={!!checked[item.id]}
                     onToggle={id => setChecked(p => ({ ...p, [id]: !p[id] }))}
-                    isAdmin={isAdmin} showQty={false} />
+                    isAdmin={isAdmin} showQty={false}
+                    onEdit={() => { setEditForm({ label: item.label }); setEditModal({ type: "edit", sectionId: currentSection.id, itemId: item.id }); }} />
                 ))}
               </SortableContext>
+              {isAdmin && (
+                <div style={{ padding: "8px 20px", display: "flex", gap: 8 }}>
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setEditForm({ label: "" }); setEditModal({ type: "add", sectionId: currentSection.id }); }}>+ Add item</button>
+                  <button className="btn btn-danger btn-sm" onClick={() => deleteHandoverSection(currentSection.id)}>Remove section</button>
+                </div>
+              )}
             </DndContext>
           </div>
         </div>
@@ -1581,6 +1624,12 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
           </button>
         )}
 
+        {isAdmin && (
+          <div style={{ marginTop: 16 }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => setSectionModal(true)}>+ Add Section</button>
+          </div>
+        )}
+
         {videoEditModal && (
           <Modal title="Set Walkthrough Video" onClose={() => setVideoEditModal(null)}>
             <div style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 16 }}>
@@ -1599,6 +1648,26 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
                 <button className="btn btn-danger" onClick={() => saveVideoUrl("")}>Remove Video</button>
               )}
               <button className="btn btn-secondary" onClick={() => setVideoEditModal(null)}>Cancel</button>
+            </div>
+          </Modal>
+        )}
+        {editModal && (
+          <Modal title={editModal.type === "add" ? "Add Item" : "Edit Item"} onClose={() => setEditModal(null)}>
+            <div className="mgmt-field"><label className="mgmt-label">Item description</label><input className="input" value={editForm.label} onChange={e => setEditForm({ ...editForm, label: e.target.value })} placeholder="e.g. Show how the bed folds out" /></div>
+            <div className="btn-row" style={{ marginTop: 20 }}>
+              <button className="btn btn-primary" onClick={saveHandoverItem} disabled={!editForm.label.trim()}>{editModal.type === "add" ? "Add Item" : "Save"}</button>
+              {editModal.type === "edit" && <button className="btn btn-danger" onClick={deleteHandoverItem}>Delete</button>}
+              <button className="btn btn-secondary" onClick={() => setEditModal(null)}>Cancel</button>
+            </div>
+          </Modal>
+        )}
+        {sectionModal && (
+          <Modal title="Add Section" onClose={() => setSectionModal(false)}>
+            <div className="mgmt-field"><label className="mgmt-label">Section Name</label><input className="input" value={newSec.name} onChange={e => setNewSec({ ...newSec, name: e.target.value })} placeholder="e.g. Kitchen & Appliances" /></div>
+            <div className="mgmt-field"><label className="mgmt-label">Icon (emoji)</label><input className="input" value={newSec.icon} onChange={e => setNewSec({ ...newSec, icon: e.target.value })} placeholder="📋" /></div>
+            <div className="btn-row" style={{ marginTop: 20 }}>
+              <button className="btn btn-primary" onClick={saveNewHandoverSection} disabled={!newSec.name.trim()}>Add Section</button>
+              <button className="btn btn-secondary" onClick={() => setSectionModal(false)}>Cancel</button>
             </div>
           </Modal>
         )}
@@ -1626,6 +1695,10 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
   const [eqChecked, setEqChecked] = useState({});
   const [eqNotes, setEqNotes] = useState("");
   const [eqExpanded, setEqExpanded] = useState({});
+  const [editModal, setEditModal] = useState(null);
+  const [editForm, setEditForm] = useState({ label: "", qty: "" });
+  const [sectionModal, setSectionModal] = useState(false);
+  const [newSec, setNewSec] = useState({ name: "", icon: "📋" });
 
   const PHOTO_SECTIONS = new Set([
     "check_exterior", "check_cab", "check_hab",
@@ -1668,6 +1741,37 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
     if (!eqAllDone || !eqBooking) return;
     onBookingUpdate(eqBooking.id, { postChecksCompleted: true, postChecksBy: user.name, postChecksAt: new Date().toISOString() });
     setEqBookingId(null); setEqChecked({}); setEqNotes(""); setEqExpanded({});
+  };
+
+  const saveItem = () => {
+    if (!editModal || !van || !editForm.label.trim()) return;
+    const tKey = van.checklistTemplate;
+    const upd = (templates[tKey] || []).map(s => {
+      if (s.id !== editModal.sectionId) return s;
+      if (editModal.type === "add") return { ...s, items: [...s.items, { id: genId(), label: editForm.label.trim(), qty: editForm.qty ? parseInt(editForm.qty) : null }] };
+      return { ...s, items: s.items.map(it => it.id === editModal.itemId ? { ...it, label: editForm.label.trim(), qty: editForm.qty ? parseInt(editForm.qty) : null } : it) };
+    });
+    onTemplatesChange({ ...templates, [tKey]: upd });
+    setEditModal(null);
+  };
+  const deleteItem = () => {
+    if (!editModal || !van) return;
+    const tKey = van.checklistTemplate;
+    const upd = (templates[tKey] || []).map(s => s.id === editModal.sectionId ? { ...s, items: s.items.filter(it => it.id !== editModal.itemId) } : s);
+    onTemplatesChange({ ...templates, [tKey]: upd });
+    setEditModal(null);
+  };
+  const saveNewSection = () => {
+    if (!van || !newSec.name.trim()) return;
+    const tKey = van.checklistTemplate;
+    onTemplatesChange({ ...templates, [tKey]: [...(templates[tKey] || []), { id: genId(), section: newSec.name.trim(), icon: newSec.icon || "📋", items: [] }] });
+    setSectionModal(false);
+    setNewSec({ name: "", icon: "📋" });
+  };
+  const deleteSection = (sectionId) => {
+    if (!van) return;
+    const tKey = van.checklistTemplate;
+    onTemplatesChange({ ...templates, [tKey]: (templates[tKey] || []).filter(s => s.id !== sectionId) });
   };
 
   if (eqBookingId && eqBooking) return (
@@ -1848,9 +1952,16 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
                         <SortableCheckItem key={item.id} id={item.id} item={item}
                           checked={!!checked[item.id]}
                           onToggle={id => setChecked(p => ({ ...p, [id]: !p[id] }))}
-                          isAdmin={isAdmin} showQty={true} />
+                          isAdmin={isAdmin} showQty={true}
+                          onEdit={() => { setEditForm({ label: item.label, qty: item.qty !== null ? String(item.qty) : "" }); setEditModal({ type: "edit", sectionId: section.id, itemId: item.id }); }} />
                       ))}
                     </SortableContext>
+                    {isAdmin && onTemplatesChange && (
+                      <div style={{ padding: "8px 20px", display: "flex", gap: 8 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => { setEditForm({ label: "", qty: "" }); setEditModal({ type: "add", sectionId: section.id }); }}>+ Add item</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => deleteSection(section.id)}>Remove section</button>
+                      </div>
+                    )}
                   </DndContext>
                   {TYRE_SECTION_IDS.has(section.id) && (
                     <TyreGrid data={tyreData} onChange={setTyreData} vanTemplate={van?.checklistTemplate} />
@@ -1875,6 +1986,12 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
         })}
       </div>
 
+      {isAdmin && onTemplatesChange && (
+        <div style={{ marginTop: 8 }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => setSectionModal(true)}>+ Add Section</button>
+        </div>
+      )}
+
       {allDone && (
         <div className="cl-complete-banner">
           <h3>✓ Inspection complete</h3>
@@ -1894,6 +2011,27 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
         </button>
         <button className="btn btn-secondary" onClick={() => setChecked({})}>Reset Checks</button>
       </div>
+      {editModal && (
+        <Modal title={editModal.type === "add" ? "Add Item" : "Edit Item"} onClose={() => setEditModal(null)}>
+          <div className="mgmt-field"><label className="mgmt-label">Item description</label><input className="input" value={editForm.label} onChange={e => setEditForm({ ...editForm, label: e.target.value })} placeholder="e.g. Check tyre pressure" /></div>
+          <div className="mgmt-field"><label className="mgmt-label">Quantity (blank for task items)</label><input className="input" value={editForm.qty} onChange={e => setEditForm({ ...editForm, qty: e.target.value.replace(/\D/g, "") })} placeholder="e.g. 2" inputMode="numeric" /></div>
+          <div className="btn-row" style={{ marginTop: 20 }}>
+            <button className="btn btn-primary" onClick={saveItem} disabled={!editForm.label.trim()}>{editModal.type === "add" ? "Add Item" : "Save"}</button>
+            {editModal.type === "edit" && <button className="btn btn-danger" onClick={deleteItem}>Delete</button>}
+            <button className="btn btn-secondary" onClick={() => setEditModal(null)}>Cancel</button>
+          </div>
+        </Modal>
+      )}
+      {sectionModal && (
+        <Modal title="Add Section" onClose={() => setSectionModal(false)}>
+          <div className="mgmt-field"><label className="mgmt-label">Section Name</label><input className="input" value={newSec.name} onChange={e => setNewSec({ ...newSec, name: e.target.value })} placeholder="e.g. Inventory — Extras" /></div>
+          <div className="mgmt-field"><label className="mgmt-label">Icon (emoji)</label><input className="input" value={newSec.icon} onChange={e => setNewSec({ ...newSec, icon: e.target.value })} placeholder="📋" /></div>
+          <div className="btn-row" style={{ marginTop: 20 }}>
+            <button className="btn btn-primary" onClick={saveNewSection} disabled={!newSec.name.trim()}>Add Section</button>
+            <button className="btn btn-secondary" onClick={() => setSectionModal(false)}>Cancel</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 
