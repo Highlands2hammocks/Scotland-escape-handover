@@ -2966,7 +2966,7 @@ export default function App() {
     setBookings(prev => {
       const next = prev.map(b => b.id === id ? { ...b, ...updates } : b);
       const changed = next.find(b => b.id === id);
-      if (changed) db.upsertBooking(changed);
+      if (changed) db.upsertBooking(changed).catch(err => showToast(`Couldn't save booking — ${err.message}`));
       return next;
     });
   };
@@ -2980,7 +2980,9 @@ export default function App() {
     // Additions and edits
     newBookings.forEach(b => {
       const old = oldMap.get(b.id);
-      if (!old || JSON.stringify(old) !== JSON.stringify(b)) db.upsertBooking(b);
+      if (!old || JSON.stringify(old) !== JSON.stringify(b)) {
+        db.upsertBooking(b).catch(err => showToast(`Couldn't save booking — ${err.message}`));
+      }
     });
     setBookings(newBookings);
     showToast("Bookings updated");

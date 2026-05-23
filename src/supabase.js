@@ -219,7 +219,10 @@ export const db = {
   },
   async upsertBooking(booking) {
     const { error } = await supabase.from("bookings").upsert(toDbBooking(booking));
-    if (error) console.error("upsertBooking:", error.message);
+    if (error) {
+      console.error("upsertBooking:", error.message);
+      throw new Error(error.message);
+    }
   },
   async deleteBooking(id) {
     const { error } = await supabase.from("bookings").delete().eq("id", id);
