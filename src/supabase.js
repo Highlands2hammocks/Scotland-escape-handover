@@ -147,6 +147,36 @@ const fromDbPredep = r => ({
   lastUpdatedAt: r.last_updated_at || null,
 });
 
+const fromDbHandover = r => ({
+  step: r.step || 1,
+  customerName: r.customer_name || "",
+  licenceNumber: r.licence_number || "",
+  depositCollected: r.deposit_collected || false,
+  docsDone: r.docs_done || {},
+  checked: r.checked || {},
+  sectionNotes: r.section_notes || {},
+  startedBy: r.started_by || null,
+  startedAt: r.started_at || null,
+  lastUpdatedBy: r.last_updated_by || null,
+  lastUpdatedAt: r.last_updated_at || null,
+});
+
+const fromDbPostTrip = r => ({
+  phase: r.phase || "vanSelect",
+  mileage: r.mileage || "",
+  fuelLevel: r.fuel_level || "",
+  keysReturned: r.keys_returned || false,
+  customerIssues: r.customer_issues || "",
+  checked: r.checked || {},
+  sectionNotes: r.section_notes || {},
+  photosMap: r.photos_map || {},
+  tyreData: r.tyre_data || {},
+  startedBy: r.started_by || null,
+  startedAt: r.started_at || null,
+  lastUpdatedBy: r.last_updated_by || null,
+  lastUpdatedAt: r.last_updated_at || null,
+});
+
 // ── First-run seed data ───────────────────────────────────────
 
 const VAN_SEEDS = [
@@ -205,7 +235,10 @@ export const db = {
   async saveVans(vans) {
     if (!vans?.length) return;
     const { error } = await supabase.from("vans").upsert(vans.map(toDbVan));
-    if (error) console.error("saveVans:", error.message);
+    if (error) {
+      console.error("saveVans:", error.message);
+      throw new Error(error.message);
+    }
   },
 
   // ── Bookings ──
@@ -216,7 +249,10 @@ export const db = {
   },
   async upsertBooking(booking) {
     const { error } = await supabase.from("bookings").upsert(toDbBooking(booking));
-    if (error) console.error("upsertBooking:", error.message);
+    if (error) {
+      console.error("upsertBooking:", error.message);
+      throw new Error(error.message);
+    }
   },
   async deleteBooking(id) {
     const { error } = await supabase.from("bookings").delete().eq("id", id);
@@ -285,5 +321,77 @@ export const db = {
       last_updated_at: progressData.lastUpdatedAt || null,
     });
     if (error) console.error("savePredepProgress:", error.message);
+  },
+
+  // ── Handover progress ──
+  async getHandoverProgress() {
+    const { data, error } = await supabase.from("handover_progress").select("*");
+    if (error) { console.error("getHandoverProgress:", error.message); return {}; }
+    const result = {};
+    (data || []).forEach(row => { result[row.van_id] = fromDbHandover(row); });
+    return result;
+  },
+  async saveHandoverProgress(vanId, p) {
+    if (!vanId) return;
+    if (p === null) {
+      const { error } = await supabase.from("handover_progress").delete().eq("van_id", vanId);
+      if (error) console.error("deleteHandoverProgress:", error.message);
+      return;
+    }
+    const { error } = await supabase.from("handover_progress").upsert({
+      van_id: vanId,
+      step: p.step || 1,
+      customer_name: p.customerName || "",
+      licence_number: p.licenceNumber || "",
+      deposit_collected: !!p.depositCollected,
+      docs_done: p.docsDone || {},
+      checked: p.checked || {},
+      section_notes: p.sectionNotes || {},
+      started_by: p.startedBy || null,
+      started_at: p.startedAt || null,
+      last_updated_by: p.lastUpdatedBy || null,
+      last_updated_at: p.lastUpdatedAt || null,
+    });
+    if (error) {
+      console.error("saveHandoverProgress:", error.message);
+      throw new Error(error.message);
+    }
+  },
+
+  // ── Post-trip progress ──
+  async getPostTripProgress() {
+    const { data, error } = await supabase.from("post_trip_progress").select("*");
+    if (error) { console.error("getPostTripProgress:", error.message); return {}; }
+    const result = {};
+    (data || []).forEach(row => { result[row.van_id] = fromDbPostTrip(row); });
+    return result;
+  },
+  async savePostTripProgress(vanId, p) {
+    if (!vanId) return;
+    if (p === null) {
+      const { error } = await supabase.from("post_trip_progress").delete().eq("van_id", vanId);
+      if (error) console.error("deletePostTripProgress:", error.message);
+      return;
+    }
+    const { error } = await supabase.from("post_trip_progress").upsert({
+      van_id: vanId,
+      phase: p.phase || "vanSelect",
+      mileage: p.mileage || "",
+      fuel_level: p.fuelLevel || "",
+      keys_returned: !!p.keysReturned,
+      customer_issues: p.customerIssues || "",
+      checked: p.checked || {},
+      section_notes: p.sectionNotes || {},
+      photos_map: p.photosMap || {},
+      tyre_data: p.tyreData || {},
+      started_by: p.startedBy || null,
+      started_at: p.startedAt || null,
+      last_updated_by: p.lastUpdatedBy || null,
+      last_updated_at: p.lastUpdatedAt || null,
+    });
+    if (error) {
+      console.error("savePostTripProgress:", error.message);
+      throw new Error(error.message);
+    }
   },
 };
