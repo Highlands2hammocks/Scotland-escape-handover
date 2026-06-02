@@ -1547,7 +1547,7 @@ function PreDeparturePanel({ vans, templates, onTemplatesChange, user, onComplet
 }
 
 // ── Handover ───────────────────────────────────────────────────
-function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, user, onComplete, isAdmin, bookings }) {
+function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, user, onComplete, isAdmin, bookings, savedProgress, onProgressChange }) {
   const [step, setStep] = useState(0);
   const [selectedVan, setSelectedVan] = useState(null);
   const [customerName, setCustomerName] = useState("");
@@ -1556,11 +1556,25 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
   const [docsDone, setDocsDone] = useState({});
   const [checked, setChecked] = useState({});
   const [sectionNotes, setSectionNotes] = useState({});
+  const [sessionMeta, setSessionMeta] = useState(null);
   const [videoEditModal, setVideoEditModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [editForm, setEditForm] = useState({ label: "" });
   const [sectionModal, setSectionModal] = useState(false);
   const [newSec, setNewSec] = useState({ name: "", icon: "📋" });
+
+  // Auto-save progress whenever anything changes so refresh / tab switch / new device resumes mid-flow
+  useEffect(() => {
+    if (!selectedVan || !onProgressChange) return;
+    onProgressChange(selectedVan, {
+      step, customerName, licenceNumber, depositCollected,
+      docsDone, checked, sectionNotes,
+      startedBy: sessionMeta?.startedBy || user.name,
+      startedAt: sessionMeta?.startedAt || new Date().toISOString(),
+      lastUpdatedBy: user.name,
+      lastUpdatedAt: new Date().toISOString(),
+    });
+  }, [selectedVan, step, customerName, licenceNumber, depositCollected, docsDone, checked, sectionNotes]);
 
   const van = vans.find(v => v.id === selectedVan);
   const tpl = van ? (handoverTemplates[van.checklistTemplate] || []) : [];
@@ -1583,6 +1597,7 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
   const resetAll = () => {
     setStep(0); setSelectedVan(null); setCustomerName(""); setLicenceNumber("");
     setDepositCollected(false); setDocsDone({}); setChecked({}); setSectionNotes({});
+    setSessionMeta(null);
   };
 
   const saveHandoverItem = () => {
@@ -1646,13 +1661,37 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
     <div className="content">
       <div className="section-title">Select Van for Customer Handover</div>
       <div className="cl-van-select">
-        {vans.map(v => (
-          <div key={v.id} className="cl-van-btn" onClick={() => { setSelectedVan(v.id); setStep(1); setChecked({}); }}>
+        {vans.map(v => {
+          const prog = savedProgress?.[v.id];
+          return (
+          <div key={v.id} className="cl-van-btn" style={prog ? { borderColor: "var(--warning)" } : {}}
+            onClick={() => {
+              if (prog) {
+                setCustomerName(prog.customerName || "");
+                setLicenceNumber(prog.licenceNumber || "");
+                setDepositCollected(!!prog.depositCollected);
+                setDocsDone(prog.docsDone || {});
+                setChecked(prog.checked || {});
+                setSectionNotes(prog.sectionNotes || {});
+                setSessionMeta({ startedBy: prog.startedBy, startedAt: prog.startedAt });
+                setSelectedVan(v.id);
+                setStep(prog.step || 1);
+              } else {
+                setCustomerName(""); setLicenceNumber(""); setDepositCollected(false);
+                setDocsDone({}); setChecked({}); setSectionNotes({});
+                setSessionMeta({ startedBy: user.name, startedAt: new Date().toISOString() });
+                setSelectedVan(v.id);
+                setStep(1);
+              }
+            }}>
             <div className="cl-van-icon">{v.image}</div>
             <div className="cl-van-name">{v.name}</div>
-            <div className="cl-van-status" style={{ color: statusColor[v.status] }}>{statusLabel[v.status]}</div>
+            <div className="cl-van-status" style={{ color: prog ? "var(--warning)" : statusColor[v.status] }}>
+              {prog ? `Resume — ${prog.lastUpdatedBy || prog.startedBy || ""}` : statusLabel[v.status]}
+            </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1915,7 +1954,7 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
 }
 
 // ── Post-trip Return Check ─────────────────────────────────────
-function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment, onBookingUpdate, isAdmin, onTemplatesChange }) {
+function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment, onBookingUpdate, isAdmin, onTemplatesChange, savedProgress, onProgressChange }) {
   const [selectedVan, setSelectedVan] = useState(null);
   const [phase, setPhase] = useState("vanSelect");
   const [mileage, setMileage] = useState("");
@@ -1927,6 +1966,7 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
   const [photosMap, setPhotosMap] = useState({});
   const [expanded, setExpanded] = useState({});
   const [tyreData, setTyreData] = useState({});
+  const [sessionMeta, setSessionMeta] = useState(null);
   const [eqBookingId, setEqBookingId] = useState(null);
   const [eqChecked, setEqChecked] = useState({});
   const [eqNotes, setEqNotes] = useState("");
@@ -1935,6 +1975,19 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
   const [editForm, setEditForm] = useState({ label: "", qty: "" });
   const [sectionModal, setSectionModal] = useState(false);
   const [newSec, setNewSec] = useState({ name: "", icon: "📋" });
+
+  // Auto-save post-trip progress whenever anything changes
+  useEffect(() => {
+    if (!selectedVan || !onProgressChange) return;
+    onProgressChange(selectedVan, {
+      phase, mileage, fuelLevel, keysReturned, customerIssues,
+      checked, sectionNotes, photosMap, tyreData,
+      startedBy: sessionMeta?.startedBy || user.name,
+      startedAt: sessionMeta?.startedAt || new Date().toISOString(),
+      lastUpdatedBy: user.name,
+      lastUpdatedAt: new Date().toISOString(),
+    });
+  }, [selectedVan, phase, mileage, fuelLevel, keysReturned, customerIssues, checked, sectionNotes, photosMap, tyreData]);
 
   const PHOTO_SECTIONS = new Set([
     "check_exterior", "check_cab", "check_hab",
@@ -1964,7 +2017,7 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
   const resetAll = () => {
     setSelectedVan(null); setPhase("vanSelect"); setMileage(""); setFuelLevel("");
     setKeysReturned(false); setCustomerIssues(""); setChecked({}); setSectionNotes({});
-    setPhotosMap({}); setExpanded({}); setTyreData({});
+    setPhotosMap({}); setExpanded({}); setTyreData({}); setSessionMeta(null);
   };
 
   const handleComplete = () => {
@@ -2077,13 +2130,39 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
     <div className="content">
       <div className="section-title">Select Van for Post-trip Check</div>
       <div className="cl-van-select">
-        {vans.map(v => (
-          <div key={v.id} className="cl-van-btn" onClick={() => { setSelectedVan(v.id); setPhase("returnInfo"); setChecked({}); }}>
+        {vans.map(v => {
+          const prog = savedProgress?.[v.id];
+          return (
+          <div key={v.id} className="cl-van-btn" style={prog ? { borderColor: "var(--warning)" } : {}}
+            onClick={() => {
+              if (prog) {
+                setMileage(prog.mileage || "");
+                setFuelLevel(prog.fuelLevel || "");
+                setKeysReturned(!!prog.keysReturned);
+                setCustomerIssues(prog.customerIssues || "");
+                setChecked(prog.checked || {});
+                setSectionNotes(prog.sectionNotes || {});
+                setPhotosMap(prog.photosMap || {});
+                setTyreData(prog.tyreData || {});
+                setSessionMeta({ startedBy: prog.startedBy, startedAt: prog.startedAt });
+                setSelectedVan(v.id);
+                setPhase(prog.phase && prog.phase !== "vanSelect" ? prog.phase : "returnInfo");
+              } else {
+                setMileage(""); setFuelLevel(""); setKeysReturned(false); setCustomerIssues("");
+                setChecked({}); setSectionNotes({}); setPhotosMap({}); setTyreData({});
+                setSessionMeta({ startedBy: user.name, startedAt: new Date().toISOString() });
+                setSelectedVan(v.id);
+                setPhase("returnInfo");
+              }
+            }}>
             <div className="cl-van-icon">{v.image}</div>
             <div className="cl-van-name">{v.name}</div>
-            <div className="cl-van-status" style={{ color: statusColor[v.status] }}>{statusLabel[v.status]}</div>
+            <div className="cl-van-status" style={{ color: prog ? "var(--warning)" : statusColor[v.status] }}>
+              {prog ? `Resume — ${prog.lastUpdatedBy || prog.startedBy || ""}` : statusLabel[v.status]}
+            </div>
           </div>
-        ))}
+          );
+        })}
       </div>
       {activeEqReturns.length > 0 && (
         <>
@@ -2901,13 +2980,16 @@ export default function App() {
   const [bookings, setBookings] = useState([]);
   const [equipment, setEquipment] = useState(DEFAULT_EQUIPMENT);
   const [preDepartureProgress, setPreDepartureProgress] = useState({});
+  const [handoverProgress, setHandoverProgress] = useState({});
+  const [postTripProgress, setPostTripProgress] = useState({});
 
   useEffect(() => {
     (async () => {
       try {
         await ensureSignedIn();
-        const [teamData, vansData, bookingsData, equipmentData, logsData, predepData] = await Promise.all([
-          db.getTeam(), db.getVans(), db.getBookings(), db.getEquipment(), db.getLogs(), db.getPredepProgress(),
+        const [teamData, vansData, bookingsData, equipmentData, logsData, predepData, handoverData, postTripData] = await Promise.all([
+          db.getTeam(), db.getVans(), db.getBookings(), db.getEquipment(), db.getLogs(),
+          db.getPredepProgress(), db.getHandoverProgress(), db.getPostTripProgress(),
         ]);
         const tp  = await store.get("se_templates", DEFAULT_TEMPLATES);
         const ptp = await store.get("se_post_trip_templates", DEFAULT_POST_TRIP_TEMPLATES);
@@ -2918,6 +3000,8 @@ export default function App() {
         setEquipment(equipmentData.length ? equipmentData : DEFAULT_EQUIPMENT);
         setLogs(logsData);
         setPreDepartureProgress(predepData);
+        setHandoverProgress(handoverData);
+        setPostTripProgress(postTripData);
         setTemplates(tp);
         setPostTripTemplates(ptp);
         setHandoverTemplates(ht);
@@ -3035,10 +3119,24 @@ export default function App() {
       mileage: returnInfo.mileage ? parseInt(returnInfo.mileage) : v.mileage,
       status: "in_prep",
     } : v));
+    // End of rental cycle — wipe both handover and post-trip progress for this van
+    setHandoverProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
+    setPostTripProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
+    db.saveHandoverProgress(vanId, null).catch(err => console.error(err));
+    db.savePostTripProgress(vanId, null).catch(err => console.error(err));
     addLog("completed post-trip check", vanName);
     const miStr = returnInfo.mileage ? ` · ${parseInt(returnInfo.mileage).toLocaleString()} mi` : "";
     showToast(`Post-trip complete — ${vanName} is In Prep${miStr}`);
     setTab("dashboard");
+  };
+
+  const handleHandoverProgressChange = (vanId, data) => {
+    setHandoverProgress(prev => data === null ? (({ [vanId]: _, ...rest }) => rest)(prev) : { ...prev, [vanId]: data });
+    db.saveHandoverProgress(vanId, data).catch(err => showToast(`Couldn't save handover progress — ${err.message}`));
+  };
+  const handlePostTripProgressChange = (vanId, data) => {
+    setPostTripProgress(prev => data === null ? (({ [vanId]: _, ...rest }) => rest)(prev) : { ...prev, [vanId]: data });
+    db.savePostTripProgress(vanId, data).catch(err => showToast(`Couldn't save post-trip progress — ${err.message}`));
   };
 
   if (!user) {
@@ -3089,8 +3187,8 @@ export default function App() {
       {tab === "team" && <TeamPanel team={team} onUpdate={handleTeamUpdate} currentUser={user} />}
       {tab === "vans" && <VanPanel vans={vans} onUpdate={v => { persistVans(v); showToast("Fleet updated"); }} currentUser={user} />}
       {tab === "pre_departure" && <PreDeparturePanel vans={vans} templates={templates} onTemplatesChange={t => { setTemplates(t); showToast("Checklist updated"); }} user={user} onComplete={handlePreDepartureComplete} isAdmin={user.role === "admin"} savedProgress={preDepartureProgress} onProgressChange={(vanId, data) => { setPreDepartureProgress(prev => data === null ? (({ [vanId]: _, ...rest }) => rest)(prev) : { ...prev, [vanId]: data }); db.savePredepProgress(vanId, data); }} bookings={bookings} equipment={equipment} onBookingUpdate={handleBookingUpdate} />}
-      {tab === "handover" && <HandoverPanel vans={vans} handoverTemplates={handoverTemplates} onHandoverTemplatesChange={ht => { setHandoverTemplates(ht); showToast("Walkthrough updated"); }} user={user} onComplete={handleHandoverComplete} isAdmin={user.role === "admin"} bookings={bookings} />}
-      {tab === "post_trip" && <PostTripPanel vans={vans} templates={postTripTemplates} onTemplatesChange={t => { setPostTripTemplates(t); showToast("Checklist updated"); }} user={user} onComplete={handlePostTripComplete} isAdmin={user.role === "admin"} bookings={bookings} equipment={equipment} onBookingUpdate={handleBookingUpdate} />}
+      {tab === "handover" && <HandoverPanel vans={vans} handoverTemplates={handoverTemplates} onHandoverTemplatesChange={ht => { setHandoverTemplates(ht); showToast("Walkthrough updated"); }} user={user} onComplete={handleHandoverComplete} isAdmin={user.role === "admin"} bookings={bookings} savedProgress={handoverProgress} onProgressChange={handleHandoverProgressChange} />}
+      {tab === "post_trip" && <PostTripPanel vans={vans} templates={postTripTemplates} onTemplatesChange={t => { setPostTripTemplates(t); showToast("Checklist updated"); }} user={user} onComplete={handlePostTripComplete} isAdmin={user.role === "admin"} bookings={bookings} equipment={equipment} onBookingUpdate={handleBookingUpdate} savedProgress={postTripProgress} onProgressChange={handlePostTripProgressChange} />}
       {tab === "equipment" && <EquipmentPanel equipment={equipment} onEquipmentChange={handleEquipmentUpdate} rentals={[]} onRentalsChange={() => {}} user={user} isAdmin={user.role === "admin"} addLog={addLog} showToast={showToast} catalogueOnly={true} />}
       <Toast message={toast} />
     </div>
