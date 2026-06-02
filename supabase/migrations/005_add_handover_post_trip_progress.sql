@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS post_trip_progress (
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS handover_progress_updated_at  ON handover_progress;
+DROP TRIGGER IF EXISTS post_trip_progress_updated_at ON post_trip_progress;
+
 CREATE TRIGGER handover_progress_updated_at
   BEFORE UPDATE ON handover_progress
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -47,6 +50,9 @@ CREATE TRIGGER post_trip_progress_updated_at
 
 ALTER TABLE handover_progress  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE post_trip_progress ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "authenticated full access" ON handover_progress;
+DROP POLICY IF EXISTS "authenticated full access" ON post_trip_progress;
 
 CREATE POLICY "authenticated full access" ON handover_progress
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
