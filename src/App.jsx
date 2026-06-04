@@ -975,6 +975,64 @@ function TeamPanel({ team, onUpdate, currentUser }) {
 }
 
 // ── Van Management ─────────────────────────────────────────────
+// ── Latest tyre readings from most recent post-trip check ─────
+const TYRE_POSITIONS = [
+  { key: "fl", label: "FL" },
+  { key: "fr", label: "FR" },
+  { key: "rl", label: "RL" },
+  { key: "rr", label: "RR" },
+];
+const TYRE_MIN_PSI_DISPLAY = 50;
+const TYRE_MIN_TREAD_DISPLAY = 2;
+
+function TyreSummary({ lastPostTrip }) {
+  const data = lastPostTrip?.tyreData || {};
+  const hasAny = TYRE_POSITIONS.some(({ key }) => data[`${key}_psi`] || data[`${key}_tread`]);
+  return (
+    <div className="mgmt-field" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+      <span className="mgmt-label">Tyres (last post-trip)</span>
+      {!hasAny ? (
+        <span style={{ fontSize: 13, color: "var(--text-muted)" }}>No post-trip readings yet</span>
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            {TYRE_POSITIONS.map(({ key, label }) => {
+              const psi   = data[`${key}_psi`]   || "";
+              const tread = data[`${key}_tread`] || "";
+              const psiN   = parseFloat(psi);
+              const treadN = parseFloat(tread);
+              const psiFail   = !isNaN(psiN)   && psiN   < TYRE_MIN_PSI_DISPLAY;
+              const treadFail = !isNaN(treadN) && treadN < TYRE_MIN_TREAD_DISPLAY;
+              const fail = psiFail || treadFail;
+              return (
+                <div key={key} style={{
+                  background: fail ? "rgba(239,68,68,0.07)" : "var(--bg3)",
+                  border: `1px solid ${fail ? "rgba(239,68,68,0.4)" : "transparent"}`,
+                  borderRadius: 6, padding: "6px 8px",
+                }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: fail ? "var(--danger)" : "var(--text-muted)", marginBottom: 2 }}>
+                    {label}{fail ? " ⚠" : ""}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text)" }}>
+                    <span style={{ color: psiFail ? "var(--danger)" : "var(--text)" }}>{psi || "—"} psi</span>
+                    {" · "}
+                    <span style={{ color: treadFail ? "var(--danger)" : "var(--text)" }}>{tread || "—"} mm</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {lastPostTrip?.date && (
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              {lastPostTrip.by ? `${lastPostTrip.by} · ` : ""}{fmtDate(lastPostTrip.date)}
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function VanPanel({ vans, onUpdate, currentUser }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({ name: "", motExpiry: "", taxExpiry: "", insuranceExpiry: "", mileage: "" });
@@ -997,6 +1055,7 @@ function VanPanel({ vans, onUpdate, currentUser }) {
             <div className="mgmt-field"><span className="mgmt-label">MOT</span><span style={{ fontSize: 14 }}>{fmtDate(v.motExpiry)}</span></div>
             <div className="mgmt-field"><span className="mgmt-label">Tax</span><span style={{ fontSize: 14 }}>{fmtDate(v.taxExpiry)}</span></div>
             <div className="mgmt-field"><span className="mgmt-label">Insurance</span><span style={{ fontSize: 14 }}>{fmtDate(v.insuranceExpiry)}</span></div>
+            <TyreSummary lastPostTrip={v.lastPostTrip} />
             {isAdmin && <div className="btn-row"><button className="btn btn-secondary btn-sm" onClick={() => { setForm({ name: v.name, motExpiry: v.motExpiry || "", taxExpiry: v.taxExpiry || "", insuranceExpiry: v.insuranceExpiry || "", mileage: String(v.mileage || "") }); setModal(v.id); }}>Edit</button><button className="btn btn-danger btn-sm" onClick={() => onUpdate(vans.filter(x => x.id !== v.id))}>Remove</button></div>}
           </div>
         ))}
@@ -3110,12 +3169,12 @@ export default function App() {
     showToast(`Handover complete — ${vanName} is now on rental`);
     setTab("dashboard");
   };
-  const handlePostTripComplete = (vanId, byName, returnInfo, sectionNotes) => {
+  const handlePostTripComplete = (vanId, byName, returnInfo, sectionNotes, tyreData) => {
     const now = new Date().toISOString();
     const vanName = vans.find(v => v.id === vanId)?.name;
     persistVans(vans.map(v => v.id === vanId ? {
       ...v,
-      lastPostTrip: { by: byName, date: now, mileage: returnInfo.mileage },
+      lastPostTrip: { by: byName, date: now, mileage: returnInfo.mileage, tyreData: tyreData || {} },
       mileage: returnInfo.mileage ? parseInt(returnInfo.mileage) : v.mileage,
       status: "in_prep",
     } : v));
