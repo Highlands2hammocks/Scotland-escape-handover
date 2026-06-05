@@ -81,6 +81,7 @@ const fromDbBooking = r => ({
   postChecksBy: r.post_checks_by || null,
   postChecksAt: r.post_checks_at || null,
   compliance: r.compliance || {},
+  rentalChecks: r.rental_checks || {},
 });
 
 const toDbBooking = b => ({
@@ -102,6 +103,7 @@ const toDbBooking = b => ({
   post_checks_by: b.postChecksBy || null,
   post_checks_at: b.postChecksAt || null,
   compliance: b.compliance || {},
+  rental_checks: b.rentalChecks || {},
 });
 
 const fromDbEquipment = r => ({

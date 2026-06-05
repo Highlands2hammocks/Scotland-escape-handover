@@ -821,6 +821,154 @@ function PinEntry({ user, onSuccess, onCancel }) {
 function Toast({ message }) { return message ? <div className="toast">{message}</div> : null; }
 function Modal({ title, onClose, children }) { return (<div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e => e.stopPropagation()}><h3>{title}</h3>{children}</div></div>); }
 
+// ── Rental detail: pre-departure / handover / post-trip captured per booking ──
+function RentalDetailModal({ booking, van, templates, handoverTemplates, postTripTemplates, onClose }) {
+  const rc = booking.rentalChecks || {};
+  const tplKey = van?.checklistTemplate;
+  const preDepSections   = (templates?.[tplKey]         || []);
+  const handoverSections = (handoverTemplates?.[tplKey] || []);
+  const postTripSections = (postTripTemplates?.[tplKey] || templates?.[tplKey] || []);
+
+  const SectionWrap = ({ title, payload, children }) => (
+    <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+        <span style={{ fontSize: 14, fontWeight: 700 }}>{title}</span>
+        {payload ? (
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+            {payload.by} · {fmtDate(payload.date)}
+          </span>
+        ) : (
+          <span style={{ fontSize: 11, color: "var(--warning)", fontWeight: 600 }}>Not yet completed</span>
+        )}
+      </div>
+      {payload && children}
+    </div>
+  );
+
+  const KV = ({ label, value }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13, padding: "3px 0" }}>
+      <span style={{ color: "var(--text-muted)" }}>{label}</span>
+      <span style={{ color: "var(--text)", textAlign: "right" }}>{value || "—"}</span>
+    </div>
+  );
+
+  const renderChecked = (checked, sections) => {
+    const items = sections.flatMap(s => s.items.map(it => ({ ...it, section: s.section })));
+    const done = items.filter(it => checked?.[it.id]);
+    if (!items.length) return null;
+    return (
+      <div style={{ marginTop: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>
+          Checklist · {done.length} of {items.length} ticked
+        </div>
+        <div style={{ maxHeight: 200, overflowY: "auto", fontSize: 12, color: "var(--text-dim)" }}>
+          {items.map(it => (
+            <div key={it.id} style={{ padding: "3px 0", display: "flex", gap: 8 }}>
+              <span style={{ color: checked?.[it.id] ? "var(--success)" : "var(--text-muted)", width: 14, flexShrink: 0 }}>
+                {checked?.[it.id] ? "✓" : "○"}
+              </span>
+              <span style={{ textDecoration: checked?.[it.id] ? "line-through" : "none" }}>{it.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTyre = (data) => {
+    if (!data) return null;
+    const corners = [["fl","FL"],["fr","FR"],["rl","RL"],["rr","RR"]];
+    const hasAny = corners.some(([k]) => data[`${k}_psi`] || data[`${k}_tread`]);
+    if (!hasAny) return null;
+    return (
+      <div style={{ marginTop: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Tyres</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 12 }}>
+          {corners.map(([k, label]) => (
+            <div key={k} style={{ background: "var(--bg3)", borderRadius: 6, padding: "6px 8px" }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>{label}</div>
+              <div>{data[`${k}_psi`] || "—"} psi · {data[`${k}_tread`] || "—"} mm</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderNotes = (notes, label = "Notes") =>
+    notes ? (
+      <div style={{ marginTop: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>{label}</div>
+        <div style={{ fontSize: 13, color: "var(--text-dim)", whiteSpace: "pre-wrap" }}>{notes}</div>
+      </div>
+    ) : null;
+
+  const renderSectionNotes = (sectionNotes, sections) => {
+    const entries = Object.entries(sectionNotes || {}).filter(([, v]) => v && String(v).trim());
+    if (!entries.length) return null;
+    return (
+      <div style={{ marginTop: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Section notes</div>
+        {entries.map(([sid, txt]) => {
+          const sec = sections.find(s => s.id === sid);
+          return (
+            <div key={sid} style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 4 }}>
+              <span style={{ fontWeight: 600 }}>{sec?.section || sid}:</span> {txt}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 560, maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ marginBottom: 4 }}>{van?.name || "Van"} — {booking.clientName}</h3>
+        <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
+          {fmtDate(booking.startDate)} → {fmtDate(booking.endDate)} · {booking.guests} guest{booking.guests !== 1 ? "s" : ""}
+        </div>
+
+        <SectionWrap title="Pre-departure" payload={rc.pre_departure}>
+          {renderNotes(rc.pre_departure?.notes)}
+          {renderTyre(rc.pre_departure?.tyreData)}
+          {renderChecked(rc.pre_departure?.checked, preDepSections)}
+        </SectionWrap>
+
+        <SectionWrap title="Handover" payload={rc.handover}>
+          <KV label="Customer name"   value={rc.handover?.customerName} />
+          <KV label="Licence number"  value={rc.handover?.licenceNumber} />
+          <KV label="Deposit collected" value={rc.handover?.depositCollected ? "Yes" : "No"} />
+          {rc.handover?.docsDone && Object.values(rc.handover.docsDone).some(Boolean) && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Documents</div>
+              {Object.entries(rc.handover.docsDone).filter(([, v]) => v).map(([doc]) => (
+                <div key={doc} style={{ fontSize: 12, color: "var(--text-dim)", padding: "2px 0" }}>✓ {doc}</div>
+              ))}
+            </div>
+          )}
+          {renderChecked(rc.handover?.checked, handoverSections)}
+          {renderSectionNotes(rc.handover?.sectionNotes, handoverSections)}
+        </SectionWrap>
+
+        <SectionWrap title="Post-trip" payload={rc.post_trip}>
+          <KV label="Return mileage"  value={rc.post_trip?.returnInfo?.mileage} />
+          <KV label="Fuel level"      value={rc.post_trip?.returnInfo?.fuelLevel} />
+          <KV label="Keys returned"   value={rc.post_trip?.returnInfo?.keysReturned ? "Yes" : "No"} />
+          <KV label="Customer issues" value={rc.post_trip?.returnInfo?.customerIssues} />
+          {renderTyre(rc.post_trip?.tyreData)}
+          {renderChecked(rc.post_trip?.checked, postTripSections)}
+          {renderSectionNotes(rc.post_trip?.sectionNotes, postTripSections)}
+        </SectionWrap>
+
+        <div className="btn-row" style={{ marginTop: 12 }}>
+          <button className="btn btn-secondary" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StepProgress({ current, total }) {
   return (
     <div className="step-progress">
@@ -835,8 +983,9 @@ function StepProgress({ current, total }) {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────
-function Dashboard({ vans, logs, bookings, onSetStatus, preDepartureProgress }) {
+function Dashboard({ vans, logs, bookings, onSetStatus, preDepartureProgress, templates, handoverTemplates, postTripTemplates }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
+  const [detailBooking, setDetailBooking] = useState(null);
   const activeBookings = [...(bookings || [])]
     .filter(b => { const e = new Date(b.endDate); e.setHours(0,0,0,0); return e >= today; })
     .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
@@ -911,7 +1060,7 @@ function Dashboard({ vans, logs, bookings, onSetStatus, preDepartureProgress }) 
                 : days <= 3 ? { bg: "rgba(232,185,64,0.15)", color: "var(--warning)" }
                 : { bg: "var(--bg)", color: "var(--text-muted)" };
               return (
-                <div key={b.id} className="upcoming-row">
+                <div key={b.id} className="upcoming-row" style={{ cursor: "pointer" }} onClick={() => setDetailBooking(b)}>
                   <div className="upcoming-row-left">
                     <div className="upcoming-row-van">
                       <span>{van?.image || "🚐"}</span>
@@ -928,6 +1077,17 @@ function Dashboard({ vans, logs, bookings, onSetStatus, preDepartureProgress }) 
             })}
           </div>
         </>
+      )}
+
+      {detailBooking && (
+        <RentalDetailModal
+          booking={detailBooking}
+          van={vans.find(v => v.id === detailBooking.vanId)}
+          templates={templates}
+          handoverTemplates={handoverTemplates}
+          postTripTemplates={postTripTemplates}
+          onClose={() => setDetailBooking(null)}
+        />
       )}
 
       <div className="section-title">Recent Activity</div>
@@ -1330,7 +1490,7 @@ function PreDeparturePanel({ vans, templates, onTemplatesChange, user, onComplet
     });
   }, [checked, notes, tyreData]);
 
-  const handleComplete = () => { if (!allDone || !van) return; onComplete(van.id, user.name, notes, tyreData); setSelectedVan(null); setChecked({}); setExpanded({}); setNotes(""); setTyreData({}); setSessionMeta(null); };
+  const handleComplete = () => { if (!allDone || !van) return; onComplete(van.id, user.name, notes, tyreData, checked); setSelectedVan(null); setChecked({}); setExpanded({}); setNotes(""); setTyreData({}); setSessionMeta(null); };
 
   const handleEqPreComplete = () => {
     if (!eqAllDone || !eqBooking) return;
@@ -1715,7 +1875,7 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
 
   const handleComplete = () => {
     if (!van || !customerName.trim() || !licenceNumber.trim()) return;
-    onComplete(van.id, user.name, customerName.trim(), licenceNumber.trim(), depositCollected);
+    onComplete(van.id, user.name, customerName.trim(), licenceNumber.trim(), depositCollected, docsDone, checked, sectionNotes);
     resetAll();
   };
 
@@ -2084,7 +2244,7 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
 
   const handleComplete = () => {
     if (!van) return;
-    onComplete(van.id, user.name, { mileage, fuelLevel, keysReturned, customerIssues }, sectionNotes, tyreData);
+    onComplete(van.id, user.name, { mileage, fuelLevel, keysReturned, customerIssues }, sectionNotes, tyreData, checked, photosMap);
     resetAll();
   };
 
@@ -3157,22 +3317,42 @@ export default function App() {
     showToast("Team updated");
   };
 
-  const handlePreDepartureComplete = (vanId, byName, notes, tyreData) => {
+  // Attach a completed check to the next van booking that hasn't recorded it yet.
+  // Pre-dep / handover / post-trip all run once per booking, in order, so the
+  // target is simply the earliest-starting booking missing that check type.
+  const recordRentalCheck = (vanId, checkType, payload) => {
+    const target = [...bookings]
+      .filter(b => b.type === "van" && b.vanId === vanId)
+      .sort((a, b) => new Date(a.startDate) - new Date(b.startDate))
+      .find(b => !b.rentalChecks?.[checkType]);
+    if (!target) return;
+    handleBookingUpdate(target.id, {
+      rentalChecks: { ...(target.rentalChecks || {}), [checkType]: payload },
+    });
+  };
+
+  const handlePreDepartureComplete = (vanId, byName, notes, tyreData, checked) => {
     const now = new Date().toISOString();
     persistVans(vans.map(v => v.id === vanId ? { ...v, lastPreDeparture: { by: byName, date: now, notes, tyreData }, status: "available" } : v));
     setPreDepartureProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
+    recordRentalCheck(vanId, "pre_departure", { by: byName, date: now, notes, tyreData: tyreData || {}, checked: checked || {} });
     addLog("completed pre-departure check", vans.find(v => v.id === vanId)?.name);
     showToast(`Pre-departure complete for ${vans.find(v => v.id === vanId)?.name}`);
     setTab("dashboard");
   };
-  const handleHandoverComplete = (vanId, byName, customerName, licenceNumber, depositCollected) => {
+  const handleHandoverComplete = (vanId, byName, customerName, licenceNumber, depositCollected, docsDone, checked, sectionNotes) => {
+    const now = new Date().toISOString();
     const vanName = vans.find(v => v.id === vanId)?.name;
     persistVans(vans.map(v => v.id === vanId ? { ...v, status: "on_rental" } : v));
+    recordRentalCheck(vanId, "handover", {
+      by: byName, date: now, customerName, licenceNumber, depositCollected,
+      docsDone: docsDone || {}, checked: checked || {}, sectionNotes: sectionNotes || {},
+    });
     addLog(`completed handover for ${customerName}`, vanName);
     showToast(`Handover complete — ${vanName} is now on rental`);
     setTab("dashboard");
   };
-  const handlePostTripComplete = (vanId, byName, returnInfo, sectionNotes, tyreData) => {
+  const handlePostTripComplete = (vanId, byName, returnInfo, sectionNotes, tyreData, checked, photosMap) => {
     const now = new Date().toISOString();
     const vanName = vans.find(v => v.id === vanId)?.name;
     persistVans(vans.map(v => v.id === vanId ? {
@@ -3181,6 +3361,11 @@ export default function App() {
       mileage: returnInfo.mileage ? parseInt(returnInfo.mileage) : v.mileage,
       status: "in_prep",
     } : v));
+    recordRentalCheck(vanId, "post_trip", {
+      by: byName, date: now, returnInfo: returnInfo || {},
+      sectionNotes: sectionNotes || {}, tyreData: tyreData || {},
+      checked: checked || {}, photosMap: photosMap || {},
+    });
     // End of rental cycle — wipe both handover and post-trip progress for this van
     setHandoverProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
     setPostTripProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
@@ -3244,7 +3429,7 @@ export default function App() {
         ))}
       </div>
       <div className="nav">{tabs.map(t => <button key={t.id} className={`nav-btn ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
-      {tab === "dashboard" && <Dashboard vans={vans} logs={logs} bookings={bookings} onSetStatus={handleStatusChange} preDepartureProgress={preDepartureProgress} />}
+      {tab === "dashboard" && <Dashboard vans={vans} logs={logs} bookings={bookings} onSetStatus={handleStatusChange} preDepartureProgress={preDepartureProgress} templates={templates} handoverTemplates={handoverTemplates} postTripTemplates={postTripTemplates} />}
       {tab === "bookings" && <BookingsPanel vans={vans} bookings={bookings} onUpdate={handleBookingsUpdate} onBookingUpdate={handleBookingUpdate} isAdmin={user.role === "admin"} equipment={equipment} />}
       {tab === "team" && <TeamPanel team={team} onUpdate={handleTeamUpdate} currentUser={user} />}
       {tab === "vans" && <VanPanel vans={vans} onUpdate={v => { persistVans(v); showToast("Fleet updated"); }} currentUser={user} />}
