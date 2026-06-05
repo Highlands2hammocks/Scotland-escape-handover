@@ -1457,7 +1457,7 @@ function PreDeparturePanel({ vans, templates, onTemplatesChange, user, onComplet
   const van = vans.find(v => v.id === selectedVan);
   const tpl = van ? (templates[van.checklistTemplate] || []) : [];
   const allItems = tpl.flatMap(s => s.items);
-  const checkedCount = Object.values(checked).filter(Boolean).length;
+  const checkedCount = allItems.filter(it => checked[it.id]).length;
   const totalCount = allItems.length;
   const pct = totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : 0;
   const allDone = totalCount > 0 && checkedCount === totalCount;
@@ -2219,7 +2219,7 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
   const van = vans.find(v => v.id === selectedVan);
   const tpl = van ? (templates[van.checklistTemplate] || []) : [];
   const allItems = tpl.flatMap(s => s.items);
-  const checkedCount = Object.values(checked).filter(Boolean).length;
+  const checkedCount = allItems.filter(it => checked[it.id]).length;
   const totalCount = allItems.length;
   const pct = totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : 0;
   const allDone = totalCount > 0 && checkedCount === totalCount;
