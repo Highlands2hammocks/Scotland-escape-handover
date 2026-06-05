@@ -847,7 +847,10 @@ function Dashboard({ vans, logs, bookings, onSetStatus, preDepartureProgress }) 
       <div className="van-cards">{vans.map(van => {
         const mot = daysUntil(van.motExpiry), tax = daysUntil(van.taxExpiry), ins = daysUntil(van.insuranceExpiry);
         const nextBooking = activeBookings.find(b => b.vanId === van.id);
-        const daysToDepart = nextBooking ? Math.ceil((new Date(nextBooking.startDate) - today) / 864e5) : null;
+        const daysToDepart = nextBooking ? (() => {
+          const s = new Date(nextBooking.startDate); s.setHours(0, 0, 0, 0);
+          return Math.ceil((s - today) / 864e5);
+        })() : null;
         const isActiveRental = daysToDepart !== null && daysToDepart <= 0;
         return (
           <div key={van.id} className="van-card">
