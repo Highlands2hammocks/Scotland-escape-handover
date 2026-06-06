@@ -3318,25 +3318,21 @@ export default function App() {
   };
 
   // Attach a completed check to the right booking for this van.
-  // Pre-dep + handover are done BEFORE departure → next upcoming/active booking.
-  // Post-trip is done AFTER return → most recently ended (or still active) booking.
-  // Past pre-feature bookings have no rentalChecks at all, so we explicitly
-  // skip anything that already ended before targeting pre-dep/handover.
+  // Pre-dep + handover happen BEFORE the trip → next not-yet-started booking.
+  // Post-trip happens AFTER return → most recently ended (or active) booking.
   const recordRentalCheck = (vanId, checkType, payload) => {
     const todayD = new Date(); todayD.setHours(0, 0, 0, 0);
-    const isEnded = b => { const e = new Date(b.endDate); e.setHours(0, 0, 0, 0); return e < todayD; };
+    const startsOnOrAfterToday = b => { const s = new Date(b.startDate); s.setHours(0, 0, 0, 0); return s >= todayD; };
     const vanBookings = bookings.filter(b => b.type === "van" && b.vanId === vanId);
 
     let target;
     if (checkType === "post_trip") {
-      // Most recently ended booking still missing post-trip — falls back to
-      // the active booking when nothing has ended yet (sort by endDate desc).
       target = [...vanBookings]
         .filter(b => !b.rentalChecks?.post_trip)
         .sort((a, b) => new Date(b.endDate) - new Date(a.endDate))[0];
     } else {
       target = [...vanBookings]
-        .filter(b => !isEnded(b) && !b.rentalChecks?.[checkType])
+        .filter(b => startsOnOrAfterToday(b) && !b.rentalChecks?.[checkType])
         .sort((a, b) => new Date(a.startDate) - new Date(b.startDate))[0];
     }
     if (!target) return;
