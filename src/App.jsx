@@ -1776,6 +1776,7 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
   const [licenceNumber, setLicenceNumber] = useState("");
   const [depositCollected, setDepositCollected] = useState(false);
   const [docsDone, setDocsDone] = useState({});
+  const [docsFiles, setDocsFiles] = useState({});
   const [checked, setChecked] = useState({});
   const [sectionNotes, setSectionNotes] = useState({});
   const [sessionMeta, setSessionMeta] = useState(null);
@@ -1818,7 +1819,7 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
 
   const resetAll = () => {
     setStep(0); setSelectedVan(null); setCustomerName(""); setLicenceNumber("");
-    setDepositCollected(false); setDocsDone({}); setChecked({}); setSectionNotes({});
+    setDepositCollected(false); setDocsDone({}); setDocsFiles({}); setChecked({}); setSectionNotes({});
     setSessionMeta(null);
   };
 
@@ -1900,7 +1901,7 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
                 setStep(prog.step || 1);
               } else {
                 setCustomerName(""); setLicenceNumber(""); setDepositCollected(false);
-                setDocsDone({}); setChecked({}); setSectionNotes({});
+                setDocsDone({}); setDocsFiles({}); setChecked({}); setSectionNotes({});
                 setSessionMeta({ startedBy: user.name, startedAt: new Date().toISOString() });
                 setSelectedVan(v.id);
                 setStep(1);
@@ -1956,17 +1957,40 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
                   <span style={{ fontSize: 22 }}>{done ? "✅" : "📷"}</span>
                   <span style={{ fontSize: 12, color: done ? "var(--accent)" : "var(--text-dim)", textAlign: "center", lineHeight: 1.3 }}>{doc}</span>
                   <input type="file" accept="image/*" capture="environment" style={{ display: "none" }}
-                    onChange={() => setDocsDone(p => ({ ...p, [doc]: true }))} />
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      setDocsFiles(p => ({ ...p, [doc]: f }));
+                      setDocsDone(p => ({ ...p, [doc]: true }));
+                    }} />
                 </label>
               );
             })}
           </div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-            Photos save to your camera roll. Email them to Scotland Escape using the button below.
+            Photos save to your camera roll. Tap the share button to send them with the photos attached.
           </div>
-          <a href={`mailto:hello@scotlandescape.com?subject=${encodeURIComponent("Handover Docs — " + (customerName || "[Name]") + " — " + new Date().toLocaleDateString("en-GB"))}&body=${encodeURIComponent("Handover documents for " + (customerName || "[Name]") + " — " + new Date().toLocaleDateString("en-GB") + "\n\nPlease find attached.")}`} style={{ display: "block" }}>
-            <button className="btn btn-secondary" style={{ width: "100%" }} type="button">✉️ Email Docs to Scotland Escape</button>
-          </a>
+          <button className="btn btn-secondary" style={{ width: "100%" }} type="button"
+            onClick={async () => {
+              const dateStr = new Date().toLocaleDateString("en-GB");
+              const subject = `Handover Docs — ${customerName || "[Name]"} — ${dateStr}`;
+              const body    = `Handover documents for ${customerName || "[Name]"} — ${dateStr}`;
+              const files = Object.entries(docsFiles)
+                .filter(([, f]) => f)
+                .map(([k, f]) => new File([f], `${k.replace(/[^a-z0-9]+/gi, "_")}_${dateStr.replace(/\//g, "-")}.${(f.name.split(".").pop() || "jpg")}`, { type: f.type }));
+              if (files.length && navigator.canShare && navigator.canShare({ files })) {
+                try {
+                  await navigator.share({ files, title: subject, text: `${body}\n\nTo: hello@scotlandescape.com` });
+                  return;
+                } catch (err) {
+                  if (err?.name === "AbortError") return;
+                }
+              }
+              // Fallback: open Mail with body, photos must be attached manually
+              window.location.href = `mailto:hello@scotlandescape.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(`${body}\n\nPlease attach the documents from your camera roll.`)}`;
+            }}>
+            ✉️ Send Docs to Scotland Escape
+          </button>
         </div>
 
         <div className="mgmt-card" style={{ marginBottom: 20 }}>
@@ -3318,24 +3342,33 @@ export default function App() {
   };
 
   // Attach a completed check to the right booking for this van.
-  // Pre-dep + handover happen BEFORE the trip → next not-yet-started booking.
-  // Post-trip happens AFTER return → most recently ended (or active) booking.
+  // Pre-dep + handover: prefer the next not-yet-started booking; fall back to a
+  //   currently active booking when none. Skip already-ended bookings.
+  // Post-trip: most recently ended (or still active) booking missing post-trip.
   const recordRentalCheck = (vanId, checkType, payload) => {
     const todayD = new Date(); todayD.setHours(0, 0, 0, 0);
-    const startsOnOrAfterToday = b => { const s = new Date(b.startDate); s.setHours(0, 0, 0, 0); return s >= todayD; };
+    const startOf = b => { const s = new Date(b.startDate); s.setHours(0, 0, 0, 0); return s; };
+    const endOf   = b => { const e = new Date(b.endDate);   e.setHours(0, 0, 0, 0); return e; };
     const vanBookings = bookings.filter(b => b.type === "van" && b.vanId === vanId);
 
     let target;
     if (checkType === "post_trip") {
       target = [...vanBookings]
         .filter(b => !b.rentalChecks?.post_trip)
-        .sort((a, b) => new Date(b.endDate) - new Date(a.endDate))[0];
+        .sort((a, b) => endOf(b) - endOf(a))[0];
     } else {
-      target = [...vanBookings]
-        .filter(b => startsOnOrAfterToday(b) && !b.rentalChecks?.[checkType])
-        .sort((a, b) => new Date(a.startDate) - new Date(b.startDate))[0];
+      const missing = vanBookings.filter(b => !b.rentalChecks?.[checkType]);
+      target = [...missing]
+        .filter(b => startOf(b) >= todayD)
+        .sort((a, b) => startOf(a) - startOf(b))[0];
+      if (!target) target = [...missing]
+        .filter(b => startOf(b) <= todayD && endOf(b) >= todayD)
+        .sort((a, b) => endOf(a) - endOf(b))[0];
     }
-    if (!target) return;
+    if (!target) {
+      showToast("No upcoming or active rental — check saved on van but not attached");
+      return;
+    }
     handleBookingUpdate(target.id, {
       rentalChecks: { ...(target.rentalChecks || {}), [checkType]: payload },
     });
