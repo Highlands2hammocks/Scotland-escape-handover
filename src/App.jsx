@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -1779,6 +1779,8 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
   const [docsFiles, setDocsFiles] = useState({});
   const [checked, setChecked] = useState({});
   const [sectionNotes, setSectionNotes] = useState({});
+  const [damageMarks, setDamageMarks] = useState([]);
+  const [signatureDataUrl, setSignatureDataUrl] = useState("");
   const [sessionMeta, setSessionMeta] = useState(null);
   const [videoEditModal, setVideoEditModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
@@ -1791,19 +1793,23 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
     if (!selectedVan || !onProgressChange) return;
     onProgressChange(selectedVan, {
       step, customerName, licenceNumber, depositCollected,
-      docsDone, checked, sectionNotes,
+      docsDone, checked, sectionNotes, damageMarks, signatureDataUrl,
       startedBy: sessionMeta?.startedBy || user.name,
       startedAt: sessionMeta?.startedAt || new Date().toISOString(),
       lastUpdatedBy: user.name,
       lastUpdatedAt: new Date().toISOString(),
     });
-  }, [selectedVan, step, customerName, licenceNumber, depositCollected, docsDone, checked, sectionNotes]);
+  }, [selectedVan, step, customerName, licenceNumber, depositCollected, docsDone, checked, sectionNotes, damageMarks, signatureDataUrl]);
 
   const van = vans.find(v => v.id === selectedVan);
   const tpl = van ? (handoverTemplates[van.checklistTemplate] || []) : [];
-  const totalFlowSteps = 1 + tpl.length;
+  // Flow: step 1 = check-in, steps 2..(1+tpl.length) = walkthrough sections,
+  // step 2+tpl.length = damage report + customer signature + complete.
+  const totalFlowSteps = 1 + tpl.length + 1;
+  const damageStep = 2 + tpl.length;
+  const onDamageStep = step === damageStep;
   const currentSectionIdx = step - 2;
-  const currentSection = step >= 2 ? tpl[currentSectionIdx] : null;
+  const currentSection = step >= 2 && step < damageStep ? tpl[currentSectionIdx] : null;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const handleHandoverItemDragEnd = ({ active, over }) => {
@@ -1820,6 +1826,7 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
   const resetAll = () => {
     setStep(0); setSelectedVan(null); setCustomerName(""); setLicenceNumber("");
     setDepositCollected(false); setDocsDone({}); setDocsFiles({}); setChecked({}); setSectionNotes({});
+    setDamageMarks([]); setSignatureDataUrl("");
     setSessionMeta(null);
   };
 
@@ -1875,8 +1882,8 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
   };
 
   const handleComplete = () => {
-    if (!van || !customerName.trim() || !licenceNumber.trim()) return;
-    onComplete(van.id, user.name, customerName.trim(), licenceNumber.trim(), depositCollected, docsDone, checked, sectionNotes);
+    if (!van || !customerName.trim() || !licenceNumber.trim() || !signatureDataUrl) return;
+    onComplete(van.id, user.name, customerName.trim(), licenceNumber.trim(), depositCollected, docsDone, checked, sectionNotes, damageMarks, signatureDataUrl);
     resetAll();
   };
 
@@ -1896,12 +1903,15 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
                 setDocsDone(prog.docsDone || {});
                 setChecked(prog.checked || {});
                 setSectionNotes(prog.sectionNotes || {});
+                setDamageMarks(prog.damageMarks || []);
+                setSignatureDataUrl(prog.signatureDataUrl || "");
                 setSessionMeta({ startedBy: prog.startedBy, startedAt: prog.startedAt });
                 setSelectedVan(v.id);
                 setStep(prog.step || 1);
               } else {
                 setCustomerName(""); setLicenceNumber(""); setDepositCollected(false);
                 setDocsDone({}); setDocsFiles({}); setChecked({}); setSectionNotes({});
+                setDamageMarks([]); setSignatureDataUrl("");
                 setSessionMeta({ startedBy: user.name, startedAt: new Date().toISOString() });
                 setSelectedVan(v.id);
                 setStep(1);
@@ -2130,8 +2140,8 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
 
         {isLastSection ? (
           <div>
-            <button className="btn btn-primary" style={{ width: "100%", marginBottom: 8 }} onClick={handleComplete}>
-              ✓ Complete Handover — Set {van?.name} to On Rental
+            <button className="btn btn-primary" style={{ width: "100%", marginBottom: 8 }} onClick={() => setStep(s => s + 1)}>
+              Next: Damage Report &amp; Signature →
             </button>
             {sChecked < sTotal && (
               <div style={{ fontSize: 13, color: "var(--warning)", textAlign: "center" }}>
@@ -2196,7 +2206,234 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
     );
   }
 
+  if (onDamageStep) {
+    return (
+      <div className="content">
+        <button className="back-btn" onClick={() => setStep(s => s - 1)}>← Back</button>
+        <div className="section-title">Damage Report &amp; Signature — {van?.name}</div>
+        <StepProgress current={totalFlowSteps - 1} total={totalFlowSteps} />
+
+        <div className="mgmt-card" style={{ marginBottom: 16 }}>
+          <div className="mgmt-label" style={{ marginBottom: 6 }}>Existing Damage</div>
+          <div style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 12 }}>
+            Walk around the van with the customer. Tap any panel where there's existing damage — a red ✕ is dropped. Tap an existing ✕ to remove it.
+          </div>
+          <VanDamageDiagram marks={damageMarks} onChange={setDamageMarks} />
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8, textAlign: "center" }}>
+            {damageMarks.length === 0 ? "No marks yet" : `${damageMarks.length} mark${damageMarks.length === 1 ? "" : "s"} recorded`}
+            {damageMarks.length > 0 && (
+              <button className="btn btn-secondary btn-sm" style={{ marginLeft: 12 }} onClick={() => setDamageMarks([])}>Clear all</button>
+            )}
+          </div>
+        </div>
+
+        <div className="mgmt-card" style={{ marginBottom: 16 }}>
+          <div className="mgmt-label" style={{ marginBottom: 6 }}>Customer Signature</div>
+          <div style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 12 }}>
+            By signing, the customer confirms the vehicle condition shown above and accepts the rental terms.
+          </div>
+          <SignaturePad value={signatureDataUrl} onChange={setSignatureDataUrl} />
+        </div>
+
+        <button className="btn btn-primary" style={{ width: "100%", marginBottom: 8 }}
+          onClick={handleComplete}
+          disabled={!signatureDataUrl}>
+          ✓ Complete Handover — Set {van?.name} to On Rental
+        </button>
+        {!signatureDataUrl && (
+          <div style={{ fontSize: 13, color: "var(--warning)", textAlign: "center" }}>
+            ⚠️ Customer signature required to complete handover
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return null;
+}
+
+// ── Damage diagram + signature pad ─────────────────────────────
+function VanDamageDiagram({ marks, onChange }) {
+  // Five views of a panel van. Coordinates are normalized 0..1 within each
+  // view's SVG viewBox so they survive responsive resizing.
+  const views = [
+    { id: "topDown",       label: "Top-down",       w: 200, h: 320 },
+    { id: "driverSide",    label: "Driver side",    w: 320, h: 160 },
+    { id: "passengerSide", label: "Passenger side", w: 320, h: 160 },
+    { id: "front",         label: "Front",          w: 200, h: 200 },
+    { id: "rear",          label: "Rear",           w: 200, h: 200 },
+  ];
+
+  const handleTap = (viewId, e, viewW, viewH) => {
+    const svg = e.currentTarget;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return;
+    const local = pt.matrixTransform(ctm.inverse());
+    onChange([...marks, { view: viewId, x: local.x / viewW, y: local.y / viewH }]);
+  };
+
+  const removeMark = (idx, e) => {
+    e.stopPropagation();
+    onChange(marks.filter((_, i) => i !== idx));
+  };
+
+  const renderVan = (viewId) => {
+    const stroke = "#cbd5e1", fill = "rgba(203,213,225,0.08)";
+    if (viewId === "topDown") return (
+      <g fill={fill} stroke={stroke} strokeWidth="2">
+        <rect x="30" y="20" width="140" height="280" rx="22" />
+        <line x1="30" y1="80" x2="170" y2="80" />
+        <rect x="50" y="30" width="100" height="40" rx="6" fill="rgba(203,213,225,0.18)" />
+        <rect x="60" y="220" width="80" height="65" rx="4" />
+        <rect x="20" y="90"  width="14" height="34" rx="3" />
+        <rect x="166" y="90" width="14" height="34" rx="3" />
+        <rect x="20" y="240" width="14" height="34" rx="3" />
+        <rect x="166" y="240" width="14" height="34" rx="3" />
+      </g>
+    );
+    if (viewId === "driverSide" || viewId === "passengerSide") return (
+      <g fill={fill} stroke={stroke} strokeWidth="2">
+        <path d="M 20 110 L 60 60 L 100 50 L 300 50 L 300 130 L 20 130 Z" />
+        <rect x="70" y="60" width="36" height="44" rx="3" fill="rgba(203,213,225,0.2)" />
+        <rect x="115" y="60" width="50" height="44" rx="3" fill="rgba(203,213,225,0.12)" />
+        <line x1="172" y1="55" x2="172" y2="125" />
+        <rect x="178" y="62" width="70" height="40" rx="3" fill="rgba(203,213,225,0.12)" />
+        <line x1="255" y1="55" x2="255" y2="125" />
+        <circle cx="70"  cy="135" r="16" />
+        <circle cx="250" cy="135" r="16" />
+      </g>
+    );
+    if (viewId === "front") return (
+      <g fill={fill} stroke={stroke} strokeWidth="2">
+        <path d="M 30 150 L 30 80 L 60 30 L 140 30 L 170 80 L 170 150 Z" />
+        <rect x="55" y="40" width="90" height="42" rx="4" fill="rgba(203,213,225,0.2)" />
+        <rect x="40" y="95" width="120" height="40" rx="4" />
+        <rect x="46" y="100" width="32" height="14" rx="2" fill="rgba(203,213,225,0.25)" />
+        <rect x="122" y="100" width="32" height="14" rx="2" fill="rgba(203,213,225,0.25)" />
+        <circle cx="50"  cy="170" r="14" />
+        <circle cx="150" cy="170" r="14" />
+      </g>
+    );
+    // rear
+    return (
+      <g fill={fill} stroke={stroke} strokeWidth="2">
+        <rect x="30" y="30" width="140" height="140" rx="6" />
+        <line x1="100" y1="30" x2="100" y2="160" />
+        <rect x="38" y="40"  width="58" height="60" rx="3" fill="rgba(203,213,225,0.12)" />
+        <rect x="104" y="40" width="58" height="60" rx="3" fill="rgba(203,213,225,0.12)" />
+        <circle cx="50"  cy="180" r="14" />
+        <circle cx="150" cy="180" r="14" />
+      </g>
+    );
+  };
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+      {views.map(v => (
+        <div key={v.id} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: 8 }}>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{v.label}</div>
+          <svg viewBox={`0 0 ${v.w} ${v.h}`} style={{ width: "100%", height: "auto", touchAction: "manipulation", cursor: "crosshair" }}
+            onClick={e => handleTap(v.id, e, v.w, v.h)}>
+            {renderVan(v.id)}
+            {marks.map((m, i) => m.view !== v.id ? null : (
+              <g key={i} onClick={e => removeMark(i, e)} style={{ cursor: "pointer" }}>
+                <circle cx={m.x * v.w} cy={m.y * v.h} r="11" fill="rgba(239,68,68,0.2)" stroke="#ef4444" strokeWidth="1.5" />
+                <line x1={m.x * v.w - 6} y1={m.y * v.h - 6} x2={m.x * v.w + 6} y2={m.y * v.h + 6} stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" />
+                <line x1={m.x * v.w + 6} y1={m.y * v.h - 6} x2={m.x * v.w - 6} y2={m.y * v.h + 6} stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" />
+              </g>
+            ))}
+          </svg>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SignaturePad({ value, onChange }) {
+  const canvasRef = useRef(null);
+  const drawingRef = useRef(false);
+  const lastRef = useRef(null);
+  const dirtyRef = useRef(false);
+
+  // Restore a saved signature into the canvas when we mount (e.g. resuming a session)
+  useEffect(() => {
+    const c = canvasRef.current; if (!c) return;
+    const ctx = c.getContext("2d");
+    // High-DPI: backing store at devicePixelRatio
+    const dpr = window.devicePixelRatio || 1;
+    const rect = c.getBoundingClientRect();
+    if (c.width !== rect.width * dpr) {
+      c.width = rect.width * dpr;
+      c.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+    }
+    ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.lineWidth = 2;
+    ctx.strokeStyle = "#0f1a14";
+    if (value && !dirtyRef.current) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
+      img.src = value;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const pointerPos = (e) => {
+    const c = canvasRef.current;
+    const rect = c.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const start = (e) => {
+    e.preventDefault();
+    drawingRef.current = true;
+    dirtyRef.current = true;
+    lastRef.current = pointerPos(e);
+  };
+  const move = (e) => {
+    if (!drawingRef.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current.getContext("2d");
+    const p = pointerPos(e);
+    ctx.beginPath();
+    ctx.moveTo(lastRef.current.x, lastRef.current.y);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    lastRef.current = p;
+  };
+  const end = () => {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    onChange(canvasRef.current.toDataURL("image/png"));
+  };
+
+  const clear = () => {
+    const c = canvasRef.current;
+    const ctx = c.getContext("2d");
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.restore();
+    dirtyRef.current = true;
+    onChange("");
+  };
+
+  return (
+    <div>
+      <div style={{ background: "#fff", borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+        <canvas ref={canvasRef}
+          style={{ display: "block", width: "100%", height: 180, touchAction: "none", cursor: "crosshair" }}
+          onPointerDown={start} onPointerMove={move} onPointerUp={end} onPointerLeave={end} onPointerCancel={end} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+        <span style={{ fontSize: 12, color: value ? "var(--accent)" : "var(--text-muted)" }}>
+          {value ? "✓ Signed" : "Sign above with your finger or stylus"}
+        </span>
+        <button className="btn btn-secondary btn-sm" type="button" onClick={clear}>Clear</button>
+      </div>
+    </div>
+  );
 }
 
 // ── Post-trip Return Check ─────────────────────────────────────
@@ -3378,19 +3615,23 @@ export default function App() {
     const now = new Date().toISOString();
     persistVans(vans.map(v => v.id === vanId ? { ...v, lastPreDeparture: { by: byName, date: now, notes, tyreData }, status: "available" } : v));
     setPreDepartureProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
+    db.savePredepProgress(vanId, null).catch(err => console.error(err));
     recordRentalCheck(vanId, "pre_departure", { by: byName, date: now, notes, tyreData: tyreData || {}, checked: checked || {} });
     addLog("completed pre-departure check", vans.find(v => v.id === vanId)?.name);
     showToast(`Pre-departure complete for ${vans.find(v => v.id === vanId)?.name}`);
     setTab("dashboard");
   };
-  const handleHandoverComplete = (vanId, byName, customerName, licenceNumber, depositCollected, docsDone, checked, sectionNotes) => {
+  const handleHandoverComplete = (vanId, byName, customerName, licenceNumber, depositCollected, docsDone, checked, sectionNotes, damageMarks, signatureDataUrl) => {
     const now = new Date().toISOString();
     const vanName = vans.find(v => v.id === vanId)?.name;
     persistVans(vans.map(v => v.id === vanId ? { ...v, status: "on_rental" } : v));
     recordRentalCheck(vanId, "handover", {
       by: byName, date: now, customerName, licenceNumber, depositCollected,
       docsDone: docsDone || {}, checked: checked || {}, sectionNotes: sectionNotes || {},
+      damageMarks: damageMarks || [], signatureDataUrl: signatureDataUrl || "",
     });
+    setHandoverProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
+    db.saveHandoverProgress(vanId, null).catch(err => console.error(err));
     addLog(`completed handover for ${customerName}`, vanName);
     showToast(`Handover complete — ${vanName} is now on rental`);
     setTab("dashboard");
