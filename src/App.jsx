@@ -3615,6 +3615,7 @@ export default function App() {
     const now = new Date().toISOString();
     persistVans(vans.map(v => v.id === vanId ? { ...v, lastPreDeparture: { by: byName, date: now, notes, tyreData }, status: "available" } : v));
     setPreDepartureProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
+    db.savePredepProgress(vanId, null).catch(err => console.error(err));
     recordRentalCheck(vanId, "pre_departure", { by: byName, date: now, notes, tyreData: tyreData || {}, checked: checked || {} });
     addLog("completed pre-departure check", vans.find(v => v.id === vanId)?.name);
     showToast(`Pre-departure complete for ${vans.find(v => v.id === vanId)?.name}`);
@@ -3629,6 +3630,8 @@ export default function App() {
       docsDone: docsDone || {}, checked: checked || {}, sectionNotes: sectionNotes || {},
       damageMarks: damageMarks || [], signatureDataUrl: signatureDataUrl || "",
     });
+    setHandoverProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
+    db.saveHandoverProgress(vanId, null).catch(err => console.error(err));
     addLog(`completed handover for ${customerName}`, vanName);
     showToast(`Handover complete — ${vanName} is now on rental`);
     setTab("dashboard");
