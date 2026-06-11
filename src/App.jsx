@@ -369,7 +369,7 @@ const DEFAULT_HANDOVER_TEMPLATES = {
       id: "ho_ext", section: "Exterior & Tyres", icon: "🚐", videoUrl: "",
       items: [
         { id: "hoe1", label: "Walk around van — note any pre-existing damage with customer" },
-        { id: "hoe2", label: "Show tyre condition and correct pressures (50 PSI / 3.5 bar all round)" },
+        { id: "hoe2", label: "Show tyre condition and correct pressures (3.5 bar all round)" },
         { id: "hoe3", label: "Show 230v hook-up receptor (rear, under door)" },
         { id: "hoe4", label: "Show reversing camera display in cab" },
       ],
@@ -878,7 +878,7 @@ function RentalDetailModal({ booking, van, templates, handoverTemplates, postTri
   const renderTyre = (data) => {
     if (!data) return null;
     const corners = [["fl","FL"],["fr","FR"],["rl","RL"],["rr","RR"]];
-    const hasAny = corners.some(([k]) => data[`${k}_psi`] || data[`${k}_tread`]);
+    const hasAny = corners.some(([k]) => data[`${k}_bar`] || data[`${k}_tread`]);
     if (!hasAny) return null;
     return (
       <div style={{ marginTop: 10 }}>
@@ -887,7 +887,7 @@ function RentalDetailModal({ booking, van, templates, handoverTemplates, postTri
           {corners.map(([k, label]) => (
             <div key={k} style={{ background: "var(--bg3)", borderRadius: 6, padding: "6px 8px" }}>
               <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>{label}</div>
-              <div>{data[`${k}_psi`] || "—"} psi · {data[`${k}_tread`] || "—"} mm</div>
+              <div>{data[`${k}_bar`] || "—"} bar · {data[`${k}_tread`] || "—"} mm</div>
             </div>
           ))}
         </div>
@@ -1145,12 +1145,12 @@ const TYRE_POSITIONS = [
   { key: "rl", label: "RL" },
   { key: "rr", label: "RR" },
 ];
-const TYRE_MIN_PSI_DISPLAY = 50;
+const TYRE_MIN_BAR_DISPLAY = 3.5;
 const TYRE_MIN_TREAD_DISPLAY = 2;
 
 function TyreSummary({ lastPostTrip }) {
   const data = lastPostTrip?.tyreData || {};
-  const hasAny = TYRE_POSITIONS.some(({ key }) => data[`${key}_psi`] || data[`${key}_tread`]);
+  const hasAny = TYRE_POSITIONS.some(({ key }) => data[`${key}_bar`] || data[`${key}_tread`]);
   return (
     <div className="mgmt-field" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
       <span className="mgmt-label">Tyres (last post-trip)</span>
@@ -1160,13 +1160,13 @@ function TyreSummary({ lastPostTrip }) {
         <>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             {TYRE_POSITIONS.map(({ key, label }) => {
-              const psi   = data[`${key}_psi`]   || "";
+              const bar   = data[`${key}_bar`]   || "";
               const tread = data[`${key}_tread`] || "";
-              const psiN   = parseFloat(psi);
+              const barN   = parseFloat(bar);
               const treadN = parseFloat(tread);
-              const psiFail   = !isNaN(psiN)   && psiN   < TYRE_MIN_PSI_DISPLAY;
+              const barFail   = !isNaN(barN)   && barN   < TYRE_MIN_BAR_DISPLAY;
               const treadFail = !isNaN(treadN) && treadN < TYRE_MIN_TREAD_DISPLAY;
-              const fail = psiFail || treadFail;
+              const fail = barFail || treadFail;
               return (
                 <div key={key} style={{
                   background: fail ? "rgba(239,68,68,0.07)" : "var(--bg3)",
@@ -1177,7 +1177,7 @@ function TyreSummary({ lastPostTrip }) {
                     {label}{fail ? " ⚠" : ""}
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text)" }}>
-                    <span style={{ color: psiFail ? "var(--danger)" : "var(--text)" }}>{psi || "—"} psi</span>
+                    <span style={{ color: barFail ? "var(--danger)" : "var(--text)" }}>{bar || "—"} bar</span>
                     {" · "}
                     <span style={{ color: treadFail ? "var(--danger)" : "var(--text)" }}>{tread || "—"} mm</span>
                   </div>
@@ -1239,7 +1239,7 @@ function VanPanel({ vans, onUpdate, currentUser }) {
 // ── Tyre check grid (shared between pre-departure and post-trip) ─
 const TYRE_SECTION_IDS = new Set(["check_exterior", "d_check_exterior"]);
 
-const TYRE_MIN_PSI   = 50;   // 3.5 bar
+const TYRE_MIN_BAR   = 3.5;  // ~50 psi — Ford Transit Custom + VW T5 fully laden
 const TYRE_MIN_TREAD = 2;    // mm legal + safety minimum
 
 function TyreGrid({ data, onChange }) {
@@ -1250,9 +1250,9 @@ function TyreGrid({ data, onChange }) {
     { key: "rr", label: "Rear Right" },
   ];
 
-  const failingPsi   = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_psi`]);   return !isNaN(v) && v < TYRE_MIN_PSI;   });
+  const failingBar   = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_bar`]);   return !isNaN(v) && v < TYRE_MIN_BAR;   });
   const failingTread = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_tread`]); return !isNaN(v) && v < TYRE_MIN_TREAD; });
-  const hasFailures  = failingPsi.length > 0 || failingTread.length > 0;
+  const hasFailures  = failingBar.length > 0 || failingTread.length > 0;
 
   return (
     <div style={{ padding: "12px 20px 8px", borderTop: "1px solid var(--border)" }}>
@@ -1260,17 +1260,17 @@ function TyreGrid({ data, onChange }) {
         🔵 Tyre Readings
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
-        Minimums: {TYRE_MIN_PSI} PSI / 3.5 bar pressure · {TYRE_MIN_TREAD}mm tread depth
+        Minimums: {TYRE_MIN_BAR} bar pressure · {TYRE_MIN_TREAD}mm tread depth
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {positions.map(({ key, label }) => {
-          const psiVal   = data[`${key}_psi`]   || "";
+          const barVal   = data[`${key}_bar`]   || "";
           const treadVal = data[`${key}_tread`] || "";
-          const psiNum   = parseFloat(psiVal);
+          const barNum   = parseFloat(barVal);
           const treadNum = parseFloat(treadVal);
-          const psiFail   = !isNaN(psiNum)   && psiNum   < TYRE_MIN_PSI;
+          const barFail   = !isNaN(barNum)   && barNum   < TYRE_MIN_BAR;
           const treadFail = !isNaN(treadNum) && treadNum < TYRE_MIN_TREAD;
-          const anyFail   = psiFail || treadFail;
+          const anyFail   = barFail || treadFail;
           return (
             <div key={key} style={{
               background: anyFail ? "rgba(239,68,68,0.07)" : "var(--bg3)",
@@ -1282,15 +1282,15 @@ function TyreGrid({ data, onChange }) {
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, marginBottom: 3, color: psiFail ? "var(--danger)" : "var(--text-muted)", fontWeight: psiFail ? 600 : 400 }}>
-                    PSI{psiFail ? ` < ${TYRE_MIN_PSI}!` : ""}
+                  <div style={{ fontSize: 11, marginBottom: 3, color: barFail ? "var(--danger)" : "var(--text-muted)", fontWeight: barFail ? 600 : 400 }}>
+                    Bar{barFail ? ` < ${TYRE_MIN_BAR}!` : ""}
                   </div>
                   <input className="input" inputMode="decimal" placeholder="—"
-                    value={psiVal}
-                    onChange={e => onChange({ ...data, [`${key}_psi`]: e.target.value.replace(/[^\d.]/g, "") })}
+                    value={barVal}
+                    onChange={e => onChange({ ...data, [`${key}_bar`]: e.target.value.replace(/[^\d.]/g, "") })}
                     style={{ textAlign: "center", fontSize: 14, padding: "6px 8px",
-                      borderColor: psiFail ? "var(--danger)" : undefined,
-                      color:       psiFail ? "var(--danger)" : undefined }} />
+                      borderColor: barFail ? "var(--danger)" : undefined,
+                      color:       barFail ? "var(--danger)" : undefined }} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 11, marginBottom: 3, color: treadFail ? "var(--danger)" : "var(--text-muted)", fontWeight: treadFail ? 600 : 400 }}>
@@ -1311,9 +1311,9 @@ function TyreGrid({ data, onChange }) {
       {hasFailures && (
         <div style={{ marginTop: 10, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 8, padding: "10px 14px" }}>
           <div style={{ fontWeight: 700, color: "var(--danger)", fontSize: 13, marginBottom: 6 }}>⚠️ Tyre readings below safe minimum</div>
-          {failingPsi.length > 0 && (
+          {failingBar.length > 0 && (
             <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 2 }}>
-              Low pressure ({TYRE_MIN_PSI} PSI / 3.5 bar min): {failingPsi.map(p => p.label).join(", ")}
+              Low pressure ({TYRE_MIN_BAR} bar min): {failingBar.map(p => p.label).join(", ")}
             </div>
           )}
           {failingTread.length > 0 && (
