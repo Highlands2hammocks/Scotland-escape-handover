@@ -6,13 +6,23 @@ import './index.css'
 
 // Register the service worker with autoUpdate behaviour. When a new build is
 // deployed: the SW detects the change, skipWaiting installs it, then we reload
-// once on next launch so the home-screen icon picks up the new bundle.
+// so the home-screen icon picks up the new bundle.
+//
+// iOS Safari throttles service-worker updates aggressively for installed PWAs,
+// so we also force an update check whenever the PWA becomes visible — that's
+// the moment a team member taps the icon, which is exactly when they want the
+// latest code.
 registerSW({
   immediate: true,
   onRegisteredSW(_url, reg) {
     if (!reg) return
-    // Re-check the SW every 60 s while the app is open so updates land mid-session too
-    setInterval(() => reg.update().catch(() => {}), 60 * 1000)
+    const checkForUpdate = () => reg.update().catch(() => {})
+    // Re-check every 30 s while the app is open so updates land mid-session
+    setInterval(checkForUpdate, 30 * 1000)
+    // And every time the PWA is foregrounded (catches the icon-tap case on iPad)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkForUpdate()
+    })
   },
   onNeedRefresh() {
     // autoUpdate skipWaiting already activated the new SW — reload to get its bundle
