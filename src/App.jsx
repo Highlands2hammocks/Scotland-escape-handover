@@ -369,7 +369,7 @@ const DEFAULT_HANDOVER_TEMPLATES = {
       id: "ho_ext", section: "Exterior & Tyres", icon: "🚐", videoUrl: "",
       items: [
         { id: "hoe1", label: "Walk around van — note any pre-existing damage with customer" },
-        { id: "hoe2", label: "Show tyre condition and correct pressures (50 PSI / 3.5 bar all round)" },
+        { id: "hoe2", label: "Show tyre condition and correct pressures (3.5 bar all round)" },
         { id: "hoe3", label: "Show 230v hook-up receptor (rear, under door)" },
         { id: "hoe4", label: "Show reversing camera display in cab" },
       ],
@@ -822,25 +822,80 @@ function Toast({ message }) { return message ? <div className="toast">{message}<
 function Modal({ title, onClose, children }) { return (<div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e => e.stopPropagation()}><h3>{title}</h3>{children}</div></div>); }
 
 // ── Rental detail: pre-departure / handover / post-trip captured per booking ──
-function RentalDetailModal({ booking, van, templates, handoverTemplates, postTripTemplates, onClose }) {
+function RentalDetailModal({ booking, van, bookings, templates, handoverTemplates, postTripTemplates, onResetSection, onMoveSection, onClose }) {
   const rc = booking.rentalChecks || {};
   const tplKey = van?.checklistTemplate;
   const preDepSections   = (templates?.[tplKey]         || []);
   const handoverSections = (handoverTemplates?.[tplKey] || []);
   const postTripSections = (postTripTemplates?.[tplKey] || templates?.[tplKey] || []);
+  const [movePickerFor, setMovePickerFor] = useState(null); // sectionKey
 
-  const SectionWrap = ({ title, payload, children }) => (
+  const moveCandidates = (bookings || [])
+    .filter(b => b.type === "van" && b.vanId === booking.vanId && b.id !== booking.id)
+    .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+
+  const SectionWrap = ({ title, sectionKey, payload, children }) => (
     <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: 14, fontWeight: 700 }}>{title}</span>
-        {payload ? (
-          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            {payload.by} · {fmtDate(payload.date)}
-          </span>
-        ) : (
-          <span style={{ fontSize: 11, color: "var(--warning)", fontWeight: 600 }}>Not yet completed</span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {payload ? (
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              {payload.by} · {fmtDate(payload.date)}
+            </span>
+          ) : (
+            <span style={{ fontSize: 11, color: "var(--warning)", fontWeight: 600 }}>Not yet completed</span>
+          )}
+          {payload && onMoveSection && moveCandidates.length > 0 && (
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ padding: "3px 10px", fontSize: 11, lineHeight: 1.4 }}
+              onClick={() => setMovePickerFor(movePickerFor === sectionKey ? null : sectionKey)}>
+              → Move
+            </button>
+          )}
+          {payload && onResetSection && (
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ padding: "3px 10px", fontSize: 11, lineHeight: 1.4 }}
+              onClick={() => {
+                if (window.confirm(`Reset the ${title.toLowerCase()} record for ${booking.clientName}? The next ${title.toLowerCase()} you complete on ${van?.name || "this van"} will attach here instead.`)) {
+                  onResetSection(sectionKey);
+                }
+              }}>
+              ↺ Reset
+            </button>
+          )}
+        </div>
       </div>
+      {payload && movePickerFor === sectionKey && (
+        <div style={{ background: "var(--bg3)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+            Move this {title.toLowerCase()} record to which booking?
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {moveCandidates.map(b => {
+              const taken = !!b.rentalChecks?.[sectionKey];
+              return (
+                <button key={b.id}
+                  className="btn btn-secondary btn-sm"
+                  style={{ justifyContent: "space-between", display: "flex", padding: "8px 12px", textAlign: "left" }}
+                  disabled={taken}
+                  title={taken ? `${b.clientName} already has a ${title.toLowerCase()} recorded — reset theirs first` : ""}
+                  onClick={() => {
+                    if (!window.confirm(`Move ${title.toLowerCase()} from ${booking.clientName} to ${b.clientName}?`)) return;
+                    onMoveSection(sectionKey, b.id);
+                    setMovePickerFor(null);
+                  }}>
+                  <span><strong>{b.clientName}</strong> · {fmtDate(b.startDate)} → {fmtDate(b.endDate)}</span>
+                  {taken && <span style={{ fontSize: 10, color: "var(--warning)" }}>already has one</span>}
+                </button>
+              );
+            })}
+          </div>
+          <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => setMovePickerFor(null)}>Cancel</button>
+        </div>
+      )}
       {payload && children}
     </div>
   );
@@ -878,7 +933,7 @@ function RentalDetailModal({ booking, van, templates, handoverTemplates, postTri
   const renderTyre = (data) => {
     if (!data) return null;
     const corners = [["fl","FL"],["fr","FR"],["rl","RL"],["rr","RR"]];
-    const hasAny = corners.some(([k]) => data[`${k}_psi`] || data[`${k}_tread`]);
+    const hasAny = corners.some(([k]) => data[`${k}_bar`] || data[`${k}_tread`]);
     if (!hasAny) return null;
     return (
       <div style={{ marginTop: 10 }}>
@@ -887,7 +942,7 @@ function RentalDetailModal({ booking, van, templates, handoverTemplates, postTri
           {corners.map(([k, label]) => (
             <div key={k} style={{ background: "var(--bg3)", borderRadius: 6, padding: "6px 8px" }}>
               <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>{label}</div>
-              <div>{data[`${k}_psi`] || "—"} psi · {data[`${k}_tread`] || "—"} mm</div>
+              <div>{data[`${k}_bar`] || "—"} bar · {data[`${k}_tread`] || "—"} mm</div>
             </div>
           ))}
         </div>
@@ -929,13 +984,13 @@ function RentalDetailModal({ booking, van, templates, handoverTemplates, postTri
           {fmtDate(booking.startDate)} → {fmtDate(booking.endDate)} · {booking.guests} guest{booking.guests !== 1 ? "s" : ""}
         </div>
 
-        <SectionWrap title="Pre-departure" payload={rc.pre_departure}>
+        <SectionWrap title="Pre-departure" sectionKey="pre_departure" payload={rc.pre_departure}>
           {renderNotes(rc.pre_departure?.notes)}
           {renderTyre(rc.pre_departure?.tyreData)}
           {renderChecked(rc.pre_departure?.checked, preDepSections)}
         </SectionWrap>
 
-        <SectionWrap title="Handover" payload={rc.handover}>
+        <SectionWrap title="Handover" sectionKey="handover" payload={rc.handover}>
           <KV label="Customer name"   value={rc.handover?.customerName} />
           <KV label="Licence number"  value={rc.handover?.licenceNumber} />
           <KV label="Deposit collected" value={rc.handover?.depositCollected ? "Yes" : "No"} />
@@ -951,7 +1006,7 @@ function RentalDetailModal({ booking, van, templates, handoverTemplates, postTri
           {renderSectionNotes(rc.handover?.sectionNotes, handoverSections)}
         </SectionWrap>
 
-        <SectionWrap title="Post-trip" payload={rc.post_trip}>
+        <SectionWrap title="Post-trip" sectionKey="post_trip" payload={rc.post_trip}>
           <KV label="Return mileage"  value={rc.post_trip?.returnInfo?.mileage} />
           <KV label="Fuel level"      value={rc.post_trip?.returnInfo?.fuelLevel} />
           <KV label="Keys returned"   value={rc.post_trip?.returnInfo?.keysReturned ? "Yes" : "No"} />
@@ -983,7 +1038,7 @@ function StepProgress({ current, total }) {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────
-function Dashboard({ vans, logs, bookings, onSetStatus, preDepartureProgress, templates, handoverTemplates, postTripTemplates }) {
+function Dashboard({ vans, logs, bookings, onSetStatus, onBookingUpdate, preDepartureProgress, templates, handoverTemplates, postTripTemplates }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const [detailBooking, setDetailBooking] = useState(null);
   const activeBookings = [...(bookings || [])]
@@ -1083,9 +1138,27 @@ function Dashboard({ vans, logs, bookings, onSetStatus, preDepartureProgress, te
         <RentalDetailModal
           booking={detailBooking}
           van={vans.find(v => v.id === detailBooking.vanId)}
+          bookings={bookings}
           templates={templates}
           handoverTemplates={handoverTemplates}
           postTripTemplates={postTripTemplates}
+          onResetSection={onBookingUpdate ? (sectionKey) => {
+            const next = { ...(detailBooking.rentalChecks || {}) };
+            delete next[sectionKey];
+            onBookingUpdate(detailBooking.id, { rentalChecks: next });
+            setDetailBooking({ ...detailBooking, rentalChecks: next });
+          } : undefined}
+          onMoveSection={onBookingUpdate ? (sectionKey, targetBookingId) => {
+            const target = bookings.find(b => b.id === targetBookingId);
+            if (!target) return;
+            const payload = detailBooking.rentalChecks?.[sectionKey];
+            if (!payload) return;
+            const sourceNext = { ...(detailBooking.rentalChecks || {}) };
+            delete sourceNext[sectionKey];
+            onBookingUpdate(detailBooking.id, { rentalChecks: sourceNext });
+            onBookingUpdate(targetBookingId, { rentalChecks: { ...(target.rentalChecks || {}), [sectionKey]: payload } });
+            setDetailBooking({ ...detailBooking, rentalChecks: sourceNext });
+          } : undefined}
           onClose={() => setDetailBooking(null)}
         />
       )}
@@ -1145,12 +1218,12 @@ const TYRE_POSITIONS = [
   { key: "rl", label: "RL" },
   { key: "rr", label: "RR" },
 ];
-const TYRE_MIN_PSI_DISPLAY = 50;
+const TYRE_MIN_BAR_DISPLAY = 3.5;
 const TYRE_MIN_TREAD_DISPLAY = 2;
 
 function TyreSummary({ lastPostTrip }) {
   const data = lastPostTrip?.tyreData || {};
-  const hasAny = TYRE_POSITIONS.some(({ key }) => data[`${key}_psi`] || data[`${key}_tread`]);
+  const hasAny = TYRE_POSITIONS.some(({ key }) => data[`${key}_bar`] || data[`${key}_tread`]);
   return (
     <div className="mgmt-field" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
       <span className="mgmt-label">Tyres (last post-trip)</span>
@@ -1160,13 +1233,13 @@ function TyreSummary({ lastPostTrip }) {
         <>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             {TYRE_POSITIONS.map(({ key, label }) => {
-              const psi   = data[`${key}_psi`]   || "";
+              const bar   = data[`${key}_bar`]   || "";
               const tread = data[`${key}_tread`] || "";
-              const psiN   = parseFloat(psi);
+              const barN   = parseFloat(bar);
               const treadN = parseFloat(tread);
-              const psiFail   = !isNaN(psiN)   && psiN   < TYRE_MIN_PSI_DISPLAY;
+              const barFail   = !isNaN(barN)   && barN   < TYRE_MIN_BAR_DISPLAY;
               const treadFail = !isNaN(treadN) && treadN < TYRE_MIN_TREAD_DISPLAY;
-              const fail = psiFail || treadFail;
+              const fail = barFail || treadFail;
               return (
                 <div key={key} style={{
                   background: fail ? "rgba(239,68,68,0.07)" : "var(--bg3)",
@@ -1177,7 +1250,7 @@ function TyreSummary({ lastPostTrip }) {
                     {label}{fail ? " ⚠" : ""}
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text)" }}>
-                    <span style={{ color: psiFail ? "var(--danger)" : "var(--text)" }}>{psi || "—"} psi</span>
+                    <span style={{ color: barFail ? "var(--danger)" : "var(--text)" }}>{bar || "—"} bar</span>
                     {" · "}
                     <span style={{ color: treadFail ? "var(--danger)" : "var(--text)" }}>{tread || "—"} mm</span>
                   </div>
@@ -1239,7 +1312,7 @@ function VanPanel({ vans, onUpdate, currentUser }) {
 // ── Tyre check grid (shared between pre-departure and post-trip) ─
 const TYRE_SECTION_IDS = new Set(["check_exterior", "d_check_exterior"]);
 
-const TYRE_MIN_PSI   = 50;   // 3.5 bar
+const TYRE_MIN_BAR   = 3.5;  // ~50 psi — Ford Transit Custom + VW T5 fully laden
 const TYRE_MIN_TREAD = 2;    // mm legal + safety minimum
 
 function TyreGrid({ data, onChange }) {
@@ -1250,9 +1323,9 @@ function TyreGrid({ data, onChange }) {
     { key: "rr", label: "Rear Right" },
   ];
 
-  const failingPsi   = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_psi`]);   return !isNaN(v) && v < TYRE_MIN_PSI;   });
+  const failingBar   = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_bar`]);   return !isNaN(v) && v < TYRE_MIN_BAR;   });
   const failingTread = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_tread`]); return !isNaN(v) && v < TYRE_MIN_TREAD; });
-  const hasFailures  = failingPsi.length > 0 || failingTread.length > 0;
+  const hasFailures  = failingBar.length > 0 || failingTread.length > 0;
 
   return (
     <div style={{ padding: "12px 20px 8px", borderTop: "1px solid var(--border)" }}>
@@ -1260,17 +1333,17 @@ function TyreGrid({ data, onChange }) {
         🔵 Tyre Readings
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
-        Minimums: {TYRE_MIN_PSI} PSI / 3.5 bar pressure · {TYRE_MIN_TREAD}mm tread depth
+        Minimums: {TYRE_MIN_BAR} bar pressure · {TYRE_MIN_TREAD}mm tread depth
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {positions.map(({ key, label }) => {
-          const psiVal   = data[`${key}_psi`]   || "";
+          const barVal   = data[`${key}_bar`]   || "";
           const treadVal = data[`${key}_tread`] || "";
-          const psiNum   = parseFloat(psiVal);
+          const barNum   = parseFloat(barVal);
           const treadNum = parseFloat(treadVal);
-          const psiFail   = !isNaN(psiNum)   && psiNum   < TYRE_MIN_PSI;
+          const barFail   = !isNaN(barNum)   && barNum   < TYRE_MIN_BAR;
           const treadFail = !isNaN(treadNum) && treadNum < TYRE_MIN_TREAD;
-          const anyFail   = psiFail || treadFail;
+          const anyFail   = barFail || treadFail;
           return (
             <div key={key} style={{
               background: anyFail ? "rgba(239,68,68,0.07)" : "var(--bg3)",
@@ -1282,15 +1355,15 @@ function TyreGrid({ data, onChange }) {
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, marginBottom: 3, color: psiFail ? "var(--danger)" : "var(--text-muted)", fontWeight: psiFail ? 600 : 400 }}>
-                    PSI{psiFail ? ` < ${TYRE_MIN_PSI}!` : ""}
+                  <div style={{ fontSize: 11, marginBottom: 3, color: barFail ? "var(--danger)" : "var(--text-muted)", fontWeight: barFail ? 600 : 400 }}>
+                    Bar{barFail ? ` < ${TYRE_MIN_BAR}!` : ""}
                   </div>
                   <input className="input" inputMode="decimal" placeholder="—"
-                    value={psiVal}
-                    onChange={e => onChange({ ...data, [`${key}_psi`]: e.target.value.replace(/[^\d.]/g, "") })}
+                    value={barVal}
+                    onChange={e => onChange({ ...data, [`${key}_bar`]: e.target.value.replace(/[^\d.]/g, "") })}
                     style={{ textAlign: "center", fontSize: 14, padding: "6px 8px",
-                      borderColor: psiFail ? "var(--danger)" : undefined,
-                      color:       psiFail ? "var(--danger)" : undefined }} />
+                      borderColor: barFail ? "var(--danger)" : undefined,
+                      color:       barFail ? "var(--danger)" : undefined }} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 11, marginBottom: 3, color: treadFail ? "var(--danger)" : "var(--text-muted)", fontWeight: treadFail ? 600 : 400 }}>
@@ -1311,9 +1384,9 @@ function TyreGrid({ data, onChange }) {
       {hasFailures && (
         <div style={{ marginTop: 10, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 8, padding: "10px 14px" }}>
           <div style={{ fontWeight: 700, color: "var(--danger)", fontSize: 13, marginBottom: 6 }}>⚠️ Tyre readings below safe minimum</div>
-          {failingPsi.length > 0 && (
+          {failingBar.length > 0 && (
             <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 2 }}>
-              Low pressure ({TYRE_MIN_PSI} PSI / 3.5 bar min): {failingPsi.map(p => p.label).join(", ")}
+              Low pressure ({TYRE_MIN_BAR} bar min): {failingBar.map(p => p.label).join(", ")}
             </div>
           )}
           {failingTread.length > 0 && (
@@ -2978,9 +3051,42 @@ function BookingsPanel({ vans, bookings, onUpdate, onBookingUpdate, isAdmin, equ
 
   return (
     <div className="content">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 8, flexWrap: "wrap" }}>
         <div className="section-title" style={{ margin: 0 }}>Upcoming Rentals</div>
-        {isAdmin && <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Booking</button>}
+        {isAdmin && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              title="Wipe pre-departure, handover and post-trip data from every booking — optionally preserving one"
+              onClick={() => {
+                const withChecks = bookings.filter(b => b.rentalChecks && Object.keys(b.rentalChecks).length > 0);
+                if (withChecks.length === 0) return alert("No rental check data to reset.");
+                const list = withChecks.map((b, i) => `${i + 1}. ${b.clientName} (${b.startDate})`).join("\n");
+                const choice = window.prompt(
+                  `${withChecks.length} booking${withChecks.length === 1 ? "" : "s"} have rental check data:\n\n${list}\n\nEnter the number of ONE booking to PRESERVE (its data stays, everyone else is wiped).\nLeave blank to wipe ALL.\nCancel to do nothing.`,
+                  ""
+                );
+                if (choice === null) return; // cancelled
+                let preserve = null;
+                const trimmed = choice.trim();
+                if (trimmed !== "") {
+                  const idx = parseInt(trimmed, 10);
+                  if (isNaN(idx) || idx < 1 || idx > withChecks.length) return alert(`Invalid choice "${trimmed}" — cancelled.`);
+                  preserve = withChecks[idx - 1];
+                }
+                const wipeCount = withChecks.length - (preserve ? 1 : 0);
+                const msg = preserve
+                  ? `Wipe rental checks on ${wipeCount} booking${wipeCount === 1 ? "" : "s"} and keep ${preserve.clientName}'s data intact?`
+                  : `Wipe rental checks on all ${wipeCount} booking${wipeCount === 1 ? "" : "s"}? Cannot be undone.`;
+                if (!window.confirm(msg)) return;
+                if (!window.confirm("Last check — this can't be undone. Continue?")) return;
+                onUpdate(bookings.map(b => (preserve && b.id === preserve.id) ? b : { ...b, rentalChecks: {} }));
+              }}>
+              ↺ Reset all rental checks
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Booking</button>
+          </div>
+        )}
       </div>
       {upcoming.length === 0
         ? <div className="empty-state">No upcoming rentals. {isAdmin && "Use the button above to add one."}</div>
@@ -3713,7 +3819,7 @@ export default function App() {
         ))}
       </div>
       <div className="nav">{tabs.map(t => <button key={t.id} className={`nav-btn ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
-      {tab === "dashboard" && <Dashboard vans={vans} logs={logs} bookings={bookings} onSetStatus={handleStatusChange} preDepartureProgress={preDepartureProgress} templates={templates} handoverTemplates={handoverTemplates} postTripTemplates={postTripTemplates} />}
+      {tab === "dashboard" && <Dashboard vans={vans} logs={logs} bookings={bookings} onSetStatus={handleStatusChange} onBookingUpdate={handleBookingUpdate} preDepartureProgress={preDepartureProgress} templates={templates} handoverTemplates={handoverTemplates} postTripTemplates={postTripTemplates} />}
       {tab === "bookings" && <BookingsPanel vans={vans} bookings={bookings} onUpdate={handleBookingsUpdate} onBookingUpdate={handleBookingUpdate} isAdmin={user.role === "admin"} equipment={equipment} />}
       {tab === "team" && <TeamPanel team={team} onUpdate={handleTeamUpdate} currentUser={user} />}
       {tab === "vans" && <VanPanel vans={vans} onUpdate={v => { persistVans(v); showToast("Fleet updated"); }} currentUser={user} />}
