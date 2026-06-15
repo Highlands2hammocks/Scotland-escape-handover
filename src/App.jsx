@@ -822,24 +822,37 @@ function Toast({ message }) { return message ? <div className="toast">{message}<
 function Modal({ title, onClose, children }) { return (<div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e => e.stopPropagation()}><h3>{title}</h3>{children}</div></div>); }
 
 // ── Rental detail: pre-departure / handover / post-trip captured per booking ──
-function RentalDetailModal({ booking, van, templates, handoverTemplates, postTripTemplates, onResetSection, onClose }) {
+function RentalDetailModal({ booking, van, bookings, templates, handoverTemplates, postTripTemplates, onResetSection, onMoveSection, onClose }) {
   const rc = booking.rentalChecks || {};
   const tplKey = van?.checklistTemplate;
   const preDepSections   = (templates?.[tplKey]         || []);
   const handoverSections = (handoverTemplates?.[tplKey] || []);
   const postTripSections = (postTripTemplates?.[tplKey] || templates?.[tplKey] || []);
+  const [movePickerFor, setMovePickerFor] = useState(null); // sectionKey
+
+  const moveCandidates = (bookings || [])
+    .filter(b => b.type === "van" && b.vanId === booking.vanId && b.id !== booking.id)
+    .sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
 
   const SectionWrap = ({ title, sectionKey, payload, children }) => (
     <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: 14, fontWeight: 700 }}>{title}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {payload ? (
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
               {payload.by} · {fmtDate(payload.date)}
             </span>
           ) : (
             <span style={{ fontSize: 11, color: "var(--warning)", fontWeight: 600 }}>Not yet completed</span>
+          )}
+          {payload && onMoveSection && moveCandidates.length > 0 && (
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ padding: "3px 10px", fontSize: 11, lineHeight: 1.4 }}
+              onClick={() => setMovePickerFor(movePickerFor === sectionKey ? null : sectionKey)}>
+              → Move
+            </button>
           )}
           {payload && onResetSection && (
             <button
@@ -855,6 +868,34 @@ function RentalDetailModal({ booking, van, templates, handoverTemplates, postTri
           )}
         </div>
       </div>
+      {payload && movePickerFor === sectionKey && (
+        <div style={{ background: "var(--bg3)", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+            Move this {title.toLowerCase()} record to which booking?
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {moveCandidates.map(b => {
+              const taken = !!b.rentalChecks?.[sectionKey];
+              return (
+                <button key={b.id}
+                  className="btn btn-secondary btn-sm"
+                  style={{ justifyContent: "space-between", display: "flex", padding: "8px 12px", textAlign: "left" }}
+                  disabled={taken}
+                  title={taken ? `${b.clientName} already has a ${title.toLowerCase()} recorded — reset theirs first` : ""}
+                  onClick={() => {
+                    if (!window.confirm(`Move ${title.toLowerCase()} from ${booking.clientName} to ${b.clientName}?`)) return;
+                    onMoveSection(sectionKey, b.id);
+                    setMovePickerFor(null);
+                  }}>
+                  <span><strong>{b.clientName}</strong> · {fmtDate(b.startDate)} → {fmtDate(b.endDate)}</span>
+                  {taken && <span style={{ fontSize: 10, color: "var(--warning)" }}>already has one</span>}
+                </button>
+              );
+            })}
+          </div>
+          <button className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={() => setMovePickerFor(null)}>Cancel</button>
+        </div>
+      )}
       {payload && children}
     </div>
   );
@@ -1097,6 +1138,7 @@ function Dashboard({ vans, logs, bookings, onSetStatus, onBookingUpdate, preDepa
         <RentalDetailModal
           booking={detailBooking}
           van={vans.find(v => v.id === detailBooking.vanId)}
+          bookings={bookings}
           templates={templates}
           handoverTemplates={handoverTemplates}
           postTripTemplates={postTripTemplates}
@@ -1105,6 +1147,17 @@ function Dashboard({ vans, logs, bookings, onSetStatus, onBookingUpdate, preDepa
             delete next[sectionKey];
             onBookingUpdate(detailBooking.id, { rentalChecks: next });
             setDetailBooking({ ...detailBooking, rentalChecks: next });
+          } : undefined}
+          onMoveSection={onBookingUpdate ? (sectionKey, targetBookingId) => {
+            const target = bookings.find(b => b.id === targetBookingId);
+            if (!target) return;
+            const payload = detailBooking.rentalChecks?.[sectionKey];
+            if (!payload) return;
+            const sourceNext = { ...(detailBooking.rentalChecks || {}) };
+            delete sourceNext[sectionKey];
+            onBookingUpdate(detailBooking.id, { rentalChecks: sourceNext });
+            onBookingUpdate(targetBookingId, { rentalChecks: { ...(target.rentalChecks || {}), [sectionKey]: payload } });
+            setDetailBooking({ ...detailBooking, rentalChecks: sourceNext });
           } : undefined}
           onClose={() => setDetailBooking(null)}
         />
