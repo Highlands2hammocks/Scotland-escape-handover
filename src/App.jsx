@@ -2998,9 +2998,25 @@ function BookingsPanel({ vans, bookings, onUpdate, onBookingUpdate, isAdmin, equ
 
   return (
     <div className="content">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 8, flexWrap: "wrap" }}>
         <div className="section-title" style={{ margin: 0 }}>Upcoming Rentals</div>
-        {isAdmin && <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Booking</button>}
+        {isAdmin && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              title="Wipe pre-departure, handover and post-trip data from every booking"
+              onClick={() => {
+                const withChecks = bookings.filter(b => b.rentalChecks && Object.keys(b.rentalChecks).length > 0);
+                if (withChecks.length === 0) return alert("No rental check data to reset.");
+                if (!window.confirm(`Reset rental check data on ${withChecks.length} booking${withChecks.length === 1 ? "" : "s"}? This wipes every pre-departure, handover and post-trip record across all rentals. The bookings themselves stay.`)) return;
+                if (!window.confirm("Last check — this can't be undone. Continue?")) return;
+                onUpdate(bookings.map(b => ({ ...b, rentalChecks: {} })));
+              }}>
+              ↺ Reset all rental checks
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Booking</button>
+          </div>
+        )}
       </div>
       {upcoming.length === 0
         ? <div className="empty-state">No upcoming rentals. {isAdmin && "Use the button above to add one."}</div>
