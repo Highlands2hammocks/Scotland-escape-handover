@@ -3057,13 +3057,30 @@ function BookingsPanel({ vans, bookings, onUpdate, onBookingUpdate, isAdmin, equ
           <div style={{ display: "flex", gap: 8 }}>
             <button
               className="btn btn-secondary btn-sm"
-              title="Wipe pre-departure, handover and post-trip data from every booking"
+              title="Wipe pre-departure, handover and post-trip data from every booking — optionally preserving one"
               onClick={() => {
                 const withChecks = bookings.filter(b => b.rentalChecks && Object.keys(b.rentalChecks).length > 0);
                 if (withChecks.length === 0) return alert("No rental check data to reset.");
-                if (!window.confirm(`Reset rental check data on ${withChecks.length} booking${withChecks.length === 1 ? "" : "s"}? This wipes every pre-departure, handover and post-trip record across all rentals. The bookings themselves stay.`)) return;
+                const list = withChecks.map((b, i) => `${i + 1}. ${b.clientName} (${b.startDate})`).join("\n");
+                const choice = window.prompt(
+                  `${withChecks.length} booking${withChecks.length === 1 ? "" : "s"} have rental check data:\n\n${list}\n\nEnter the number of ONE booking to PRESERVE (its data stays, everyone else is wiped).\nLeave blank to wipe ALL.\nCancel to do nothing.`,
+                  ""
+                );
+                if (choice === null) return; // cancelled
+                let preserve = null;
+                const trimmed = choice.trim();
+                if (trimmed !== "") {
+                  const idx = parseInt(trimmed, 10);
+                  if (isNaN(idx) || idx < 1 || idx > withChecks.length) return alert(`Invalid choice "${trimmed}" — cancelled.`);
+                  preserve = withChecks[idx - 1];
+                }
+                const wipeCount = withChecks.length - (preserve ? 1 : 0);
+                const msg = preserve
+                  ? `Wipe rental checks on ${wipeCount} booking${wipeCount === 1 ? "" : "s"} and keep ${preserve.clientName}'s data intact?`
+                  : `Wipe rental checks on all ${wipeCount} booking${wipeCount === 1 ? "" : "s"}? Cannot be undone.`;
+                if (!window.confirm(msg)) return;
                 if (!window.confirm("Last check — this can't be undone. Continue?")) return;
-                onUpdate(bookings.map(b => ({ ...b, rentalChecks: {} })));
+                onUpdate(bookings.map(b => (preserve && b.id === preserve.id) ? b : { ...b, rentalChecks: {} }));
               }}>
               ↺ Reset all rental checks
             </button>
