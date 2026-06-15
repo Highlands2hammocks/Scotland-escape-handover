@@ -822,24 +822,38 @@ function Toast({ message }) { return message ? <div className="toast">{message}<
 function Modal({ title, onClose, children }) { return (<div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e => e.stopPropagation()}><h3>{title}</h3>{children}</div></div>); }
 
 // ── Rental detail: pre-departure / handover / post-trip captured per booking ──
-function RentalDetailModal({ booking, van, templates, handoverTemplates, postTripTemplates, onClose }) {
+function RentalDetailModal({ booking, van, templates, handoverTemplates, postTripTemplates, onResetSection, onClose }) {
   const rc = booking.rentalChecks || {};
   const tplKey = van?.checklistTemplate;
   const preDepSections   = (templates?.[tplKey]         || []);
   const handoverSections = (handoverTemplates?.[tplKey] || []);
   const postTripSections = (postTripTemplates?.[tplKey] || templates?.[tplKey] || []);
 
-  const SectionWrap = ({ title, payload, children }) => (
+  const SectionWrap = ({ title, sectionKey, payload, children }) => (
     <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, marginBottom: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, gap: 8 }}>
         <span style={{ fontSize: 14, fontWeight: 700 }}>{title}</span>
-        {payload ? (
-          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            {payload.by} · {fmtDate(payload.date)}
-          </span>
-        ) : (
-          <span style={{ fontSize: 11, color: "var(--warning)", fontWeight: 600 }}>Not yet completed</span>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {payload ? (
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              {payload.by} · {fmtDate(payload.date)}
+            </span>
+          ) : (
+            <span style={{ fontSize: 11, color: "var(--warning)", fontWeight: 600 }}>Not yet completed</span>
+          )}
+          {payload && onResetSection && (
+            <button
+              className="btn btn-secondary btn-sm"
+              style={{ padding: "3px 10px", fontSize: 11, lineHeight: 1.4 }}
+              onClick={() => {
+                if (window.confirm(`Reset the ${title.toLowerCase()} record for ${booking.clientName}? The next ${title.toLowerCase()} you complete on ${van?.name || "this van"} will attach here instead.`)) {
+                  onResetSection(sectionKey);
+                }
+              }}>
+              ↺ Reset
+            </button>
+          )}
+        </div>
       </div>
       {payload && children}
     </div>
@@ -929,13 +943,13 @@ function RentalDetailModal({ booking, van, templates, handoverTemplates, postTri
           {fmtDate(booking.startDate)} → {fmtDate(booking.endDate)} · {booking.guests} guest{booking.guests !== 1 ? "s" : ""}
         </div>
 
-        <SectionWrap title="Pre-departure" payload={rc.pre_departure}>
+        <SectionWrap title="Pre-departure" sectionKey="pre_departure" payload={rc.pre_departure}>
           {renderNotes(rc.pre_departure?.notes)}
           {renderTyre(rc.pre_departure?.tyreData)}
           {renderChecked(rc.pre_departure?.checked, preDepSections)}
         </SectionWrap>
 
-        <SectionWrap title="Handover" payload={rc.handover}>
+        <SectionWrap title="Handover" sectionKey="handover" payload={rc.handover}>
           <KV label="Customer name"   value={rc.handover?.customerName} />
           <KV label="Licence number"  value={rc.handover?.licenceNumber} />
           <KV label="Deposit collected" value={rc.handover?.depositCollected ? "Yes" : "No"} />
@@ -951,7 +965,7 @@ function RentalDetailModal({ booking, van, templates, handoverTemplates, postTri
           {renderSectionNotes(rc.handover?.sectionNotes, handoverSections)}
         </SectionWrap>
 
-        <SectionWrap title="Post-trip" payload={rc.post_trip}>
+        <SectionWrap title="Post-trip" sectionKey="post_trip" payload={rc.post_trip}>
           <KV label="Return mileage"  value={rc.post_trip?.returnInfo?.mileage} />
           <KV label="Fuel level"      value={rc.post_trip?.returnInfo?.fuelLevel} />
           <KV label="Keys returned"   value={rc.post_trip?.returnInfo?.keysReturned ? "Yes" : "No"} />
@@ -983,7 +997,7 @@ function StepProgress({ current, total }) {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────
-function Dashboard({ vans, logs, bookings, onSetStatus, preDepartureProgress, templates, handoverTemplates, postTripTemplates }) {
+function Dashboard({ vans, logs, bookings, onSetStatus, onBookingUpdate, preDepartureProgress, templates, handoverTemplates, postTripTemplates }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const [detailBooking, setDetailBooking] = useState(null);
   const activeBookings = [...(bookings || [])]
@@ -1086,6 +1100,12 @@ function Dashboard({ vans, logs, bookings, onSetStatus, preDepartureProgress, te
           templates={templates}
           handoverTemplates={handoverTemplates}
           postTripTemplates={postTripTemplates}
+          onResetSection={onBookingUpdate ? (sectionKey) => {
+            const next = { ...(detailBooking.rentalChecks || {}) };
+            delete next[sectionKey];
+            onBookingUpdate(detailBooking.id, { rentalChecks: next });
+            setDetailBooking({ ...detailBooking, rentalChecks: next });
+          } : undefined}
           onClose={() => setDetailBooking(null)}
         />
       )}
@@ -3713,7 +3733,7 @@ export default function App() {
         ))}
       </div>
       <div className="nav">{tabs.map(t => <button key={t.id} className={`nav-btn ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
-      {tab === "dashboard" && <Dashboard vans={vans} logs={logs} bookings={bookings} onSetStatus={handleStatusChange} preDepartureProgress={preDepartureProgress} templates={templates} handoverTemplates={handoverTemplates} postTripTemplates={postTripTemplates} />}
+      {tab === "dashboard" && <Dashboard vans={vans} logs={logs} bookings={bookings} onSetStatus={handleStatusChange} onBookingUpdate={handleBookingUpdate} preDepartureProgress={preDepartureProgress} templates={templates} handoverTemplates={handoverTemplates} postTripTemplates={postTripTemplates} />}
       {tab === "bookings" && <BookingsPanel vans={vans} bookings={bookings} onUpdate={handleBookingsUpdate} onBookingUpdate={handleBookingUpdate} isAdmin={user.role === "admin"} equipment={equipment} />}
       {tab === "team" && <TeamPanel team={team} onUpdate={handleTeamUpdate} currentUser={user} />}
       {tab === "vans" && <VanPanel vans={vans} onUpdate={v => { persistVans(v); showToast("Fleet updated"); }} currentUser={user} />}
