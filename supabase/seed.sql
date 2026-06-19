@@ -8,7 +8,8 @@ INSERT INTO team_members (name, email, role, pin) VALUES
   ('Campbell', 'campbell@scotlandescape.com', 'admin', '1111'),
   ('Gemma',    'gemma@scotlandescape.com',    'admin', '2222'),
   ('Jorja',    'jorja@scotlandescape.com',    'team',  '3333'),
-  ('Michael',  'michael@scotlandescape.com',  'team',  '4444');
+  ('Michael',  'michael@scotlandescape.com',  'team',  '4444'),
+  ('Pamela',   'pamela@scotlandescape.com',   'admin', '5555');
 
 -- ── Vans ──────────────────────────────────────────────────────
 
