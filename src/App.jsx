@@ -346,6 +346,7 @@ const DEFAULT_TEAM = [
   { id: "2", name: "Gemma", role: "admin", pin: "2222", active: true },
   { id: "3", name: "Jorja", role: "team", pin: "3333", active: true },
   { id: "4", name: "Michael", role: "team", pin: "4444", active: true },
+  { id: "5", name: "Pamela", role: "admin", pin: "5555", active: true },
 ];
 
 const DEFAULT_VANS = [
