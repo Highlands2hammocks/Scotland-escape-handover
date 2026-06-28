@@ -2927,6 +2927,215 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
   return null;
 }
 
+// ── Calendar / Timeline ────────────────────────────────────────
+// Per-van rows of coloured booking bars across one month at a time.
+// Overlapping bookings on the same van auto-stack into lanes so
+// double-bookings are visually obvious.
+const VAN_COLOURS = [
+  { bg: "#3b82f6", text: "#fff" }, // blue
+  { bg: "#f59e0b", text: "#1a1410" }, // amber
+  { bg: "#10b981", text: "#0a1f12" }, // green
+  { bg: "#ec4899", text: "#fff" }, // pink
+  { bg: "#8b5cf6", text: "#fff" }, // purple
+  { bg: "#ef4444", text: "#fff" }, // red
+];
+
+function CalendarPanel({ vans, bookings, templates, handoverTemplates, postTripTemplates, onBookingUpdate }) {
+  const [anchor, setAnchor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; });
+  const [detailBooking, setDetailBooking] = useState(null);
+
+  const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const monthEnd   = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+  const daysInMonth = monthEnd.getDate();
+  const monthLabel  = anchor.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  const todayD = new Date(); todayD.setHours(0,0,0,0);
+  const monthHasToday = todayD >= monthStart && todayD <= monthEnd;
+
+  const colourForVan = (vanId) => {
+    const idx = vans.findIndex(v => v.id === vanId);
+    return VAN_COLOURS[(idx >= 0 ? idx : 0) % VAN_COLOURS.length];
+  };
+
+  // Booking visible in the current month if its range intersects the month
+  const inMonth = (b) => {
+    const s = new Date(b.startDate); s.setHours(0,0,0,0);
+    const e = new Date(b.endDate);   e.setHours(0,0,0,0);
+    return s <= monthEnd && e >= monthStart;
+  };
+
+  // Assign lanes within a van: each booking gets a row index so overlaps stack
+  const withLanes = (items) => {
+    const sorted = [...items].sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
+    const laneEnds = []; // ms timestamp of last endDate per lane
+    const out = sorted.map(b => {
+      const s = new Date(b.startDate).getTime();
+      const e = new Date(b.endDate).getTime();
+      let lane = laneEnds.findIndex(end => end < s);
+      if (lane === -1) { laneEnds.push(e); lane = laneEnds.length - 1; }
+      else { laneEnds[lane] = e; }
+      return { ...b, lane };
+    });
+    return { items: out, laneCount: Math.max(1, laneEnds.length) };
+  };
+
+  // Translate booking date range → left/width within the month columns
+  const posOf = (b) => {
+    const s = new Date(b.startDate); s.setHours(0,0,0,0);
+    const e = new Date(b.endDate);   e.setHours(0,0,0,0);
+    const fromDay = Math.max(1, s <= monthStart ? 1 : s.getDate());
+    const toDay   = Math.min(daysInMonth, e >= monthEnd ? daysInMonth : e.getDate());
+    const leftPct  = ((fromDay - 1) / daysInMonth) * 100;
+    const widthPct = ((toDay - fromDay + 1) / daysInMonth) * 100;
+    const truncStart = s < monthStart;
+    const truncEnd   = e > monthEnd;
+    return { leftPct, widthPct, truncStart, truncEnd };
+  };
+
+  const shiftMonth = (delta) => {
+    const d = new Date(anchor); d.setMonth(d.getMonth() + delta); d.setDate(1);
+    setAnchor(d);
+  };
+
+  const ROW_GAP = 4;
+  const BAR_H = 28;
+
+  return (
+    <div className="content">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <div className="section-title" style={{ margin: 0 }}>Booking Calendar</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => shiftMonth(-1)}>← Prev</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setAnchor(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; })}>Today</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => shiftMonth(1)}>Next →</button>
+        </div>
+      </div>
+      <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>{monthLabel}</div>
+
+      <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+        {/* Day axis */}
+        <div style={{ display: "flex", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ width: 90, flexShrink: 0, padding: "8px 10px", fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5, borderRight: "1px solid var(--border)" }}>Van</div>
+          <div style={{ flex: 1, position: "relative", height: 28 }}>
+            {Array.from({ length: daysInMonth }, (_, i) => {
+              const isToday = monthHasToday && (i + 1) === todayD.getDate();
+              const isWeekend = ((monthStart.getDay() + i) % 7 === 0) || ((monthStart.getDay() + i) % 7 === 6);
+              return (
+                <div key={i} style={{
+                  position: "absolute", left: `${(i / daysInMonth) * 100}%`, width: `${(1 / daysInMonth) * 100}%`,
+                  top: 0, bottom: 0,
+                  borderRight: "1px solid var(--border)",
+                  background: isToday ? "rgba(232,185,64,0.18)" : isWeekend ? "rgba(255,255,255,0.02)" : "transparent",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 10, fontWeight: isToday ? 700 : 500,
+                  color: isToday ? "var(--warning)" : "var(--text-muted)",
+                }}>{i + 1}</div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Per-van rows */}
+        {vans.map((v, vi) => {
+          const colour = colourForVan(v.id);
+          const all = bookings.filter(b => b.type === "van" && b.vanId === v.id && inMonth(b));
+          const { items, laneCount } = withLanes(all);
+          const rowHeight = laneCount * (BAR_H + ROW_GAP) + ROW_GAP;
+          return (
+            <div key={v.id} style={{ display: "flex", borderBottom: vi === vans.length - 1 ? "none" : "1px solid var(--border)", minHeight: rowHeight }}>
+              <div style={{ width: 90, flexShrink: 0, padding: "10px 10px", borderRight: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: colour.bg, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{v.name}</span>
+              </div>
+              <div style={{ flex: 1, position: "relative", padding: `${ROW_GAP}px 0` }}>
+                {/* Grid background — same weekend/today shading as axis */}
+                {Array.from({ length: daysInMonth }, (_, i) => {
+                  const isToday = monthHasToday && (i + 1) === todayD.getDate();
+                  const isWeekend = ((monthStart.getDay() + i) % 7 === 0) || ((monthStart.getDay() + i) % 7 === 6);
+                  return (
+                    <div key={i} style={{
+                      position: "absolute", left: `${(i / daysInMonth) * 100}%`, width: `${(1 / daysInMonth) * 100}%`,
+                      top: 0, bottom: 0,
+                      borderRight: i === daysInMonth - 1 ? "none" : "1px solid rgba(255,255,255,0.04)",
+                      background: isToday ? "rgba(232,185,64,0.08)" : isWeekend ? "rgba(255,255,255,0.02)" : "transparent",
+                    }} />
+                  );
+                })}
+                {items.map(b => {
+                  const { leftPct, widthPct, truncStart, truncEnd } = posOf(b);
+                  return (
+                    <button key={b.id}
+                      onClick={() => setDetailBooking(b)}
+                      title={`${b.clientName} · ${b.startDate} → ${b.endDate}`}
+                      style={{
+                        position: "absolute",
+                        left: `calc(${leftPct}% + 2px)`,
+                        width: `calc(${widthPct}% - 4px)`,
+                        top: ROW_GAP + b.lane * (BAR_H + ROW_GAP),
+                        height: BAR_H,
+                        background: colour.bg,
+                        color: colour.text,
+                        border: "none",
+                        borderRadius: 6,
+                        padding: "0 8px",
+                        textAlign: "left",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        overflow: "hidden",
+                        whiteSpace: "nowrap",
+                        textOverflow: "ellipsis",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.3)",
+                        borderTopLeftRadius: truncStart ? 0 : 6,
+                        borderBottomLeftRadius: truncStart ? 0 : 6,
+                        borderTopRightRadius: truncEnd ? 0 : 6,
+                        borderBottomRightRadius: truncEnd ? 0 : 6,
+                      }}>
+                      {truncStart && "…"}{b.clientName}{truncEnd && " …"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 12, lineHeight: 1.6 }}>
+        Each van has its own colour. Bars span the booking's date range — tap a bar to see/edit the rental's pre-departure, handover and post-trip records. Overlapping bookings on the same van stack so any double-bookings are obvious.
+      </div>
+
+      {detailBooking && (
+        <RentalDetailModal
+          booking={detailBooking}
+          van={vans.find(v => v.id === detailBooking.vanId)}
+          bookings={bookings}
+          templates={templates}
+          handoverTemplates={handoverTemplates}
+          postTripTemplates={postTripTemplates}
+          onResetSection={onBookingUpdate ? (sectionKey) => {
+            const next = { ...(detailBooking.rentalChecks || {}) };
+            delete next[sectionKey];
+            onBookingUpdate(detailBooking.id, { rentalChecks: next });
+            setDetailBooking({ ...detailBooking, rentalChecks: next });
+          } : undefined}
+          onMoveSection={onBookingUpdate ? (sectionKey, targetBookingId) => {
+            const target = bookings.find(b => b.id === targetBookingId);
+            if (!target) return;
+            const payload = detailBooking.rentalChecks?.[sectionKey];
+            if (!payload) return;
+            const sourceNext = { ...(detailBooking.rentalChecks || {}) };
+            delete sourceNext[sectionKey];
+            onBookingUpdate(detailBooking.id, { rentalChecks: sourceNext });
+            onBookingUpdate(targetBookingId, { rentalChecks: { ...(target.rentalChecks || {}), [sectionKey]: payload } });
+            setDetailBooking({ ...detailBooking, rentalChecks: sourceNext });
+          } : undefined}
+          onClose={() => setDetailBooking(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Bookings ───────────────────────────────────────────────────
 function BookingsPanel({ vans, bookings, onUpdate, onBookingUpdate, isAdmin, equipment }) {
   const [modal, setModal] = useState(null);
@@ -3793,6 +4002,7 @@ export default function App() {
 
   const tabs = [
     { id: "dashboard",     label: "Dashboard",    icon: "🏠" },
+    { id: "calendar",      label: "Calendar",     icon: "📆" },
     { id: "bookings",      label: "Bookings",     icon: "📅" },
     { id: "pre_departure", label: "Pre-departure", icon: "✅" },
     { id: "handover",      label: "Handover",     icon: "🔑" },
@@ -3821,6 +4031,7 @@ export default function App() {
       </div>
       <div className="nav">{tabs.map(t => <button key={t.id} className={`nav-btn ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
       {tab === "dashboard" && <Dashboard vans={vans} logs={logs} bookings={bookings} onSetStatus={handleStatusChange} onBookingUpdate={handleBookingUpdate} preDepartureProgress={preDepartureProgress} templates={templates} handoverTemplates={handoverTemplates} postTripTemplates={postTripTemplates} />}
+      {tab === "calendar" && <CalendarPanel vans={vans} bookings={bookings} templates={templates} handoverTemplates={handoverTemplates} postTripTemplates={postTripTemplates} onBookingUpdate={handleBookingUpdate} />}
       {tab === "bookings" && <BookingsPanel vans={vans} bookings={bookings} onUpdate={handleBookingsUpdate} onBookingUpdate={handleBookingUpdate} isAdmin={user.role === "admin"} equipment={equipment} />}
       {tab === "team" && <TeamPanel team={team} onUpdate={handleTeamUpdate} currentUser={user} />}
       {tab === "vans" && <VanPanel vans={vans} onUpdate={v => { persistVans(v); showToast("Fleet updated"); }} currentUser={user} />}
