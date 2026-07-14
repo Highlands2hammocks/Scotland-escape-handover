@@ -342,7 +342,7 @@ export const db = {
       if (error) console.error("deleteHandoverProgress:", error.message);
       return;
     }
-    const { error } = await supabase.from("handover_progress").upsert({
+    const baseRow = {
       van_id: vanId,
       step: p.step || 1,
       customer_name: p.customerName || "",
@@ -351,13 +351,22 @@ export const db = {
       docs_done: p.docsDone || {},
       checked: p.checked || {},
       section_notes: p.sectionNotes || {},
-      damage_marks: p.damageMarks || [],
-      signature_data_url: p.signatureDataUrl || "",
       started_by: p.startedBy || null,
       started_at: p.startedAt || null,
       last_updated_by: p.lastUpdatedBy || null,
       last_updated_at: p.lastUpdatedAt || null,
-    });
+    };
+    const extendedRow = {
+      ...baseRow,
+      damage_marks: p.damageMarks || [],
+      signature_data_url: p.signatureDataUrl || "",
+    };
+    // Try with the migration-007 columns first; if they're missing on this DB,
+    // fall back to the base row so autosaves keep working even without the migration
+    let { error } = await supabase.from("handover_progress").upsert(extendedRow);
+    if (error && /damage_marks|signature_data_url|schema cache/i.test(error.message)) {
+      ({ error } = await supabase.from("handover_progress").upsert(baseRow));
+    }
     if (error) {
       console.error("saveHandoverProgress:", error.message);
       throw new Error(error.message);
