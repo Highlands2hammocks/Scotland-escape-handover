@@ -1855,6 +1855,7 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
   const [sectionNotes, setSectionNotes] = useState({});
   const [damageMarks, setDamageMarks] = useState([]);
   const [signatureDataUrl, setSignatureDataUrl] = useState("");
+  const [targetBookingId, setTargetBookingId] = useState("");
   const [sessionMeta, setSessionMeta] = useState(null);
   const [videoEditModal, setVideoEditModal] = useState(null);
   const [editModal, setEditModal] = useState(null);
@@ -1900,7 +1901,7 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
   const resetAll = () => {
     setStep(0); setSelectedVan(null); setCustomerName(""); setLicenceNumber("");
     setDepositCollected(false); setDocsDone({}); setDocsFiles({}); setChecked({}); setSectionNotes({});
-    setDamageMarks([]); setSignatureDataUrl("");
+    setDamageMarks([]); setSignatureDataUrl(""); setTargetBookingId("");
     setSessionMeta(null);
   };
 
@@ -1957,7 +1958,7 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
 
   const handleComplete = () => {
     if (!van || !customerName.trim() || !licenceNumber.trim() || !signatureDataUrl) return;
-    onComplete(van.id, user.name, customerName.trim(), licenceNumber.trim(), depositCollected, docsDone, checked, sectionNotes, damageMarks, signatureDataUrl);
+    onComplete(van.id, user.name, customerName.trim(), licenceNumber.trim(), depositCollected, docsDone, checked, sectionNotes, damageMarks, signatureDataUrl, targetBookingId || undefined);
     resetAll();
   };
 
@@ -2013,6 +2014,25 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
     const missing = relatedBooking ? getComplianceMissing(relatedBooking.compliance) : [];
     const isCompliant = compStatus === "complete";
     const hasBooking = !!relatedBooking;
+
+    // Booking picker so the team can explicitly choose which rental this
+    // handover attaches to. Defaults to the same auto-target logic
+    // recordRentalCheck uses (next not-yet-started, then currently active).
+    const todayD = new Date(); todayD.setHours(0, 0, 0, 0);
+    const startOf = b => { const s = new Date(b.startDate); s.setHours(0, 0, 0, 0); return s; };
+    const endOf   = b => { const e = new Date(b.endDate);   e.setHours(0, 0, 0, 0); return e; };
+    const vanBookingsAll = (bookings || [])
+      .filter(b => b.type === "van" && b.vanId === selectedVan)
+      .sort((a, b) => startOf(a) - startOf(b));
+    const autoTargetId = (() => {
+      const missing = vanBookingsAll.filter(b => !b.rentalChecks?.handover);
+      const next = [...missing].filter(b => startOf(b) >= todayD).sort((a, b) => startOf(a) - startOf(b))[0];
+      if (next) return next.id;
+      const active = [...missing].filter(b => startOf(b) <= todayD && endOf(b) >= todayD).sort((a, b) => endOf(a) - endOf(b))[0];
+      return active?.id || "";
+    })();
+    const effectiveTargetId = targetBookingId || autoTargetId;
+    const effectiveTarget = vanBookingsAll.find(b => b.id === effectiveTargetId);
     return (
       <div className="content">
         <button className="back-btn" onClick={() => setStep(0)}>← Back</button>
@@ -2029,6 +2049,39 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
             <input className="input" value={licenceNumber} onChange={e => setLicenceNumber(e.target.value.toUpperCase())}
               placeholder="e.g. SMITH901215AJ9AB" style={{ fontFamily: "monospace", letterSpacing: 1 }} />
           </div>
+        </div>
+
+        <div className="mgmt-card" style={{ marginBottom: 16 }}>
+          <div className="mgmt-label" style={{ marginBottom: 6 }}>Attach handover to booking</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
+            Confirm which rental this handover is for. Defaults to the next upcoming (or currently active) {van?.name} booking that doesn't have handover data yet.
+          </div>
+          {vanBookingsAll.length === 0 ? (
+            <div style={{ background: "rgba(232,185,64,0.1)", border: "1px solid rgba(232,185,64,0.3)", borderRadius: 8, padding: "10px 12px", fontSize: 13, color: "var(--warning)" }}>
+              ⚠️ No bookings exist for {van?.name} — the handover won't attach to any rental.
+            </div>
+          ) : (
+            <>
+              <select className="input" value={effectiveTargetId} onChange={e => setTargetBookingId(e.target.value)}>
+                {vanBookingsAll.map(b => {
+                  const has = !!b.rentalChecks?.handover;
+                  const isAuto = b.id === autoTargetId;
+                  return (
+                    <option key={b.id} value={b.id}>
+                      {b.clientName} · {b.startDate} → {b.endDate}
+                      {has ? "  (already has handover — will overwrite)" : ""}
+                      {isAuto && !has ? "  · default" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+              {effectiveTarget?.rentalChecks?.handover && (
+                <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 8 }}>
+                  ⚠️ This booking already has a handover record ({effectiveTarget.rentalChecks.handover.by} · {fmtDate(effectiveTarget.rentalChecks.handover.date)}). Completing will overwrite it.
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div className="mgmt-card" style={{ marginBottom: 16 }}>
@@ -3898,29 +3951,36 @@ export default function App() {
   // Pre-dep + handover: prefer the next not-yet-started booking; fall back to a
   //   currently active booking when none. Skip already-ended bookings.
   // Post-trip: most recently ended (or still active) booking missing post-trip.
-  const recordRentalCheck = (vanId, checkType, payload) => {
-    const todayD = new Date(); todayD.setHours(0, 0, 0, 0);
-    const startOf = b => { const s = new Date(b.startDate); s.setHours(0, 0, 0, 0); return s; };
-    const endOf   = b => { const e = new Date(b.endDate);   e.setHours(0, 0, 0, 0); return e; };
-    const vanBookings = bookings.filter(b => b.type === "van" && b.vanId === vanId);
-
+  const recordRentalCheck = (vanId, checkType, payload, explicitTargetId) => {
     let target;
-    if (checkType === "post_trip") {
-      target = [...vanBookings]
-        .filter(b => !b.rentalChecks?.post_trip)
-        .sort((a, b) => endOf(b) - endOf(a))[0];
+    if (explicitTargetId) {
+      target = bookings.find(b => b.id === explicitTargetId && b.type === "van" && b.vanId === vanId);
+      if (!target) {
+        showToast("Selected booking not found — check saved on van but not attached");
+        return;
+      }
     } else {
-      const missing = vanBookings.filter(b => !b.rentalChecks?.[checkType]);
-      target = [...missing]
-        .filter(b => startOf(b) >= todayD)
-        .sort((a, b) => startOf(a) - startOf(b))[0];
-      if (!target) target = [...missing]
-        .filter(b => startOf(b) <= todayD && endOf(b) >= todayD)
-        .sort((a, b) => endOf(a) - endOf(b))[0];
-    }
-    if (!target) {
-      showToast("No upcoming or active rental — check saved on van but not attached");
-      return;
+      const todayD = new Date(); todayD.setHours(0, 0, 0, 0);
+      const startOf = b => { const s = new Date(b.startDate); s.setHours(0, 0, 0, 0); return s; };
+      const endOf   = b => { const e = new Date(b.endDate);   e.setHours(0, 0, 0, 0); return e; };
+      const vanBookings = bookings.filter(b => b.type === "van" && b.vanId === vanId);
+      if (checkType === "post_trip") {
+        target = [...vanBookings]
+          .filter(b => !b.rentalChecks?.post_trip)
+          .sort((a, b) => endOf(b) - endOf(a))[0];
+      } else {
+        const missing = vanBookings.filter(b => !b.rentalChecks?.[checkType]);
+        target = [...missing]
+          .filter(b => startOf(b) >= todayD)
+          .sort((a, b) => startOf(a) - startOf(b))[0];
+        if (!target) target = [...missing]
+          .filter(b => startOf(b) <= todayD && endOf(b) >= todayD)
+          .sort((a, b) => endOf(a) - endOf(b))[0];
+      }
+      if (!target) {
+        showToast("No upcoming or active rental — check saved on van but not attached");
+        return;
+      }
     }
     handleBookingUpdate(target.id, {
       rentalChecks: { ...(target.rentalChecks || {}), [checkType]: payload },
@@ -3937,7 +3997,7 @@ export default function App() {
     showToast(`Pre-departure complete for ${vans.find(v => v.id === vanId)?.name}`);
     setTab("dashboard");
   };
-  const handleHandoverComplete = (vanId, byName, customerName, licenceNumber, depositCollected, docsDone, checked, sectionNotes, damageMarks, signatureDataUrl) => {
+  const handleHandoverComplete = (vanId, byName, customerName, licenceNumber, depositCollected, docsDone, checked, sectionNotes, damageMarks, signatureDataUrl, targetBookingId) => {
     const now = new Date().toISOString();
     const vanName = vans.find(v => v.id === vanId)?.name;
     persistVans(vans.map(v => v.id === vanId ? { ...v, status: "on_rental" } : v));
@@ -3945,7 +4005,7 @@ export default function App() {
       by: byName, date: now, customerName, licenceNumber, depositCollected,
       docsDone: docsDone || {}, checked: checked || {}, sectionNotes: sectionNotes || {},
       damageMarks: damageMarks || [], signatureDataUrl: signatureDataUrl || "",
-    });
+    }, targetBookingId);
     setHandoverProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
     db.saveHandoverProgress(vanId, null).catch(err => console.error(err));
     addLog(`completed handover for ${customerName}`, vanName);
