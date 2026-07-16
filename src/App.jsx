@@ -934,7 +934,7 @@ function RentalDetailModal({ booking, van, bookings, templates, handoverTemplate
   const renderTyre = (data) => {
     if (!data) return null;
     const corners = [["fl","FL"],["fr","FR"],["rl","RL"],["rr","RR"]];
-    const hasAny = corners.some(([k]) => data[`${k}_bar`] || data[`${k}_tread`]);
+    const hasAny = corners.some(([k]) => readTyreBar(data, k) || data[`${k}_tread`]);
     if (!hasAny) return null;
     return (
       <div style={{ marginTop: 10 }}>
@@ -943,7 +943,7 @@ function RentalDetailModal({ booking, van, bookings, templates, handoverTemplate
           {corners.map(([k, label]) => (
             <div key={k} style={{ background: "var(--bg3)", borderRadius: 6, padding: "6px 8px" }}>
               <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)" }}>{label}</div>
-              <div>{data[`${k}_bar`] || "—"} bar · {data[`${k}_tread`] || "—"} mm</div>
+              <div>{readTyreBar(data, k) || "—"} bar · {data[`${k}_tread`] || "—"} mm</div>
             </div>
           ))}
         </div>
@@ -1222,9 +1222,22 @@ const TYRE_POSITIONS = [
 const TYRE_MIN_BAR_DISPLAY = 3.5;
 const TYRE_MIN_TREAD_DISPLAY = 2;
 
+// Reads a tyre pressure in bar, falling back to legacy _psi records from
+// before the PSI→bar migration (converted on read). Returns "" when absent.
+const readTyreBar = (data, corner) => {
+  const bar = data?.[`${corner}_bar`];
+  if (bar !== undefined && bar !== null && String(bar).trim() !== "") return String(bar);
+  const psi = data?.[`${corner}_psi`];
+  if (psi !== undefined && psi !== null && String(psi).trim() !== "") {
+    const n = parseFloat(psi);
+    if (!isNaN(n)) return (n / 14.5).toFixed(1);
+  }
+  return "";
+};
+
 function TyreSummary({ lastPostTrip }) {
   const data = lastPostTrip?.tyreData || {};
-  const hasAny = TYRE_POSITIONS.some(({ key }) => data[`${key}_bar`] || data[`${key}_tread`]);
+  const hasAny = TYRE_POSITIONS.some(({ key }) => readTyreBar(data, key) || data[`${key}_tread`]);
   return (
     <div className="mgmt-field" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
       <span className="mgmt-label">Tyres (last post-trip)</span>
@@ -1234,7 +1247,7 @@ function TyreSummary({ lastPostTrip }) {
         <>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             {TYRE_POSITIONS.map(({ key, label }) => {
-              const bar   = data[`${key}_bar`]   || "";
+              const bar   = readTyreBar(data, key);
               const tread = data[`${key}_tread`] || "";
               const barN   = parseFloat(bar);
               const treadN = parseFloat(tread);
@@ -1324,7 +1337,7 @@ function TyreGrid({ data, onChange }) {
     { key: "rr", label: "Rear Right" },
   ];
 
-  const failingBar   = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_bar`]);   return !isNaN(v) && v < TYRE_MIN_BAR;   });
+  const failingBar   = positions.filter(({ key }) => { const v = parseFloat(readTyreBar(data, key));  return !isNaN(v) && v < TYRE_MIN_BAR;   });
   const failingTread = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_tread`]); return !isNaN(v) && v < TYRE_MIN_TREAD; });
   const hasFailures  = failingBar.length > 0 || failingTread.length > 0;
 
@@ -1338,7 +1351,7 @@ function TyreGrid({ data, onChange }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {positions.map(({ key, label }) => {
-          const barVal   = data[`${key}_bar`]   || "";
+          const barVal   = readTyreBar(data, key);
           const treadVal = data[`${key}_tread`] || "";
           const barNum   = parseFloat(barVal);
           const treadNum = parseFloat(treadVal);
