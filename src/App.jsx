@@ -2915,23 +2915,33 @@ function CalendarPanel({ vans, bookings, templates, handoverTemplates, postTripT
       <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>{monthLabel}</div>
 
       <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
-        {/* Day axis */}
+        {/* Day axis — weekday letter above the date number */}
         <div style={{ display: "flex", borderBottom: "1px solid var(--border)" }}>
           <div style={{ width: 90, flexShrink: 0, padding: "8px 10px", fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5, borderRight: "1px solid var(--border)" }}>Van</div>
-          <div style={{ flex: 1, position: "relative", height: 28 }}>
+          <div style={{ flex: 1, position: "relative", height: 42 }}>
             {Array.from({ length: daysInMonth }, (_, i) => {
+              // Ground-truth the weekday from the actual Date so it can't drift
+              // out of sync with the date number if the month formula ever changes
+              const cellDate = new Date(monthStart.getFullYear(), monthStart.getMonth(), i + 1);
+              const weekdayIdx = cellDate.getDay(); // 0=Sun … 6=Sat
+              const letter = ["S","M","T","W","T","F","S"][weekdayIdx];
               const isToday = monthHasToday && (i + 1) === todayD.getDate();
-              const isWeekend = ((monthStart.getDay() + i) % 7 === 0) || ((monthStart.getDay() + i) % 7 === 6);
+              const isWeekend = weekdayIdx === 0 || weekdayIdx === 6;
               return (
                 <div key={i} style={{
                   position: "absolute", left: `${(i / daysInMonth) * 100}%`, width: `${(1 / daysInMonth) * 100}%`,
                   top: 0, bottom: 0,
                   borderRight: "1px solid var(--border)",
                   background: isToday ? "rgba(232,185,64,0.18)" : isWeekend ? "rgba(255,255,255,0.02)" : "transparent",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 10, fontWeight: isToday ? 700 : 500,
+                  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                  gap: 1,
                   color: isToday ? "var(--warning)" : "var(--text-muted)",
-                }}>{i + 1}</div>
+                  fontWeight: isToday ? 700 : 500,
+                }}
+                  title={cellDate.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}>
+                  <div style={{ fontSize: 9, opacity: 0.75, letterSpacing: 0.3 }}>{letter}</div>
+                  <div style={{ fontSize: 11 }}>{i + 1}</div>
+                </div>
               );
             })}
           </div>
