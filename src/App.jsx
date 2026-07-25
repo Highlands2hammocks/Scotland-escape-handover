@@ -659,6 +659,68 @@ function PinEntry({ user, onSuccess, onCancel }) {
 function Toast({ message }) { return message ? <div className="toast">{message}</div> : null; }
 function Modal({ title, onClose, children }) { return (<div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e => e.stopPropagation()}><h3>{title}</h3>{children}</div></div>); }
 
+// Booking-target picker used by pre-dep / handover / post-trip completion.
+// Shows every van booking, defaults to the same booking `recordRentalCheck`
+// would auto-pick, and lets the team override if the auto-pick isn't right.
+function BookingTargetPicker({ van, bookings, checkType, value, onChange }) {
+  if (!van) return null;
+  const label = checkType === "pre_departure" ? "pre-departure" : checkType === "post_trip" ? "post-trip" : "handover";
+  const todayD = new Date(); todayD.setHours(0, 0, 0, 0);
+  const startOf = b => { const s = new Date(b.startDate); s.setHours(0, 0, 0, 0); return s; };
+  const endOf   = b => { const e = new Date(b.endDate);   e.setHours(0, 0, 0, 0); return e; };
+  const vanBookings = (bookings || [])
+    .filter(b => b.type === "van" && b.vanId === van.id)
+    .sort((a, b) => startOf(a) - startOf(b));
+  const autoTargetId = (() => {
+    const missing = vanBookings.filter(b => !b.rentalChecks?.[checkType]);
+    if (checkType === "post_trip") {
+      // Most recently ended (or currently active) missing post_trip
+      return [...missing].sort((a, b) => endOf(b) - endOf(a))[0]?.id || "";
+    }
+    // pre_departure + handover: next not-yet-started, fall back to currently active
+    const next = [...missing].filter(b => startOf(b) >= todayD).sort((a, b) => startOf(a) - startOf(b))[0];
+    if (next) return next.id;
+    const active = [...missing].filter(b => startOf(b) <= todayD && endOf(b) >= todayD).sort((a, b) => endOf(a) - endOf(b))[0];
+    return active?.id || "";
+  })();
+  const effectiveId = value || autoTargetId;
+  const effective = vanBookings.find(b => b.id === effectiveId);
+  return (
+    <div className="mgmt-card" style={{ marginBottom: 12 }}>
+      <div className="mgmt-label" style={{ marginBottom: 6 }}>Attach {label} to booking</div>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
+        Confirm which rental this {label} check is for. Defaults to the smartest auto-target for {van.name}.
+      </div>
+      {vanBookings.length === 0 ? (
+        <div style={{ background: "rgba(232,185,64,0.1)", border: "1px solid rgba(232,185,64,0.3)", borderRadius: 8, padding: "10px 12px", fontSize: 13, color: "var(--warning)" }}>
+          ⚠️ No bookings exist for {van.name} — the {label} check won't attach to any rental.
+        </div>
+      ) : (
+        <>
+          <select className="input" value={effectiveId} onChange={e => onChange(e.target.value)}>
+            {vanBookings.map(b => {
+              const has = !!b.rentalChecks?.[checkType];
+              const isAuto = b.id === autoTargetId;
+              return (
+                <option key={b.id} value={b.id}>
+                  {b.clientName} · {b.startDate} → {b.endDate}
+                  {has ? "  (already has record — will overwrite)" : ""}
+                  {isAuto && !has ? "  · default" : ""}
+                </option>
+              );
+            })}
+          </select>
+          {effective?.rentalChecks?.[checkType] && (
+            <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 8 }}>
+              ⚠️ This booking already has a {label} record ({effective.rentalChecks[checkType].by} · {fmtDate(effective.rentalChecks[checkType].date)}). Completing will overwrite it.
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Rental detail: pre-departure / handover / post-trip captured per booking ──
 function RentalDetailModal({ booking, van, bookings, templates, handoverTemplates, postTripTemplates, onResetSection, onMoveSection, onClose }) {
   const rc = booking.rentalChecks || {};
@@ -1368,6 +1430,7 @@ function PreDeparturePanel({ vans, templates, onTemplatesChange, user, onComplet
   const [expanded, setExpanded] = useState({});
   const [notes, setNotes] = useState("");
   const [tyreData, setTyreData] = useState({});
+  const [targetBookingId, setTargetBookingId] = useState("");
   const [eqBookingId, setEqBookingId] = useState(null);
   const [eqChecked, setEqChecked] = useState({});
   const [eqNotes, setEqNotes] = useState("");
@@ -1414,7 +1477,7 @@ function PreDeparturePanel({ vans, templates, onTemplatesChange, user, onComplet
     });
   }, [checked, notes, tyreData]);
 
-  const handleComplete = () => { if (!allDone || !van) return; onComplete(van.id, user.name, notes, tyreData, checked); setSelectedVan(null); setChecked({}); setExpanded({}); setNotes(""); setTyreData({}); setSessionMeta(null); };
+  const handleComplete = () => { if (!allDone || !van) return; onComplete(van.id, user.name, notes, tyreData, checked, targetBookingId || undefined); setSelectedVan(null); setChecked({}); setExpanded({}); setNotes(""); setTyreData({}); setTargetBookingId(""); setSessionMeta(null); };
 
   const handleEqPreComplete = () => {
     if (!eqAllDone || !eqBooking) return;
@@ -1613,6 +1676,13 @@ function PreDeparturePanel({ vans, templates, onTemplatesChange, user, onComplet
         <div className="cl-progress-bar-bg"><div className="cl-progress-bar" style={{ width: `${pct}%` }} /></div>
         <span className="cl-progress-text"><span className="cl-progress-pct">{pct}%</span> ({checkedCount}/{totalCount})</span>
       </div>
+      <BookingTargetPicker
+        van={van}
+        bookings={bookings}
+        checkType="pre_departure"
+        value={targetBookingId}
+        onChange={setTargetBookingId}
+      />
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
         <SortableContext items={tpl.map(s => s.id)} strategy={verticalListSortingStrategy}>
           <div className="cl-sections">{tpl.map(section => {
@@ -1901,38 +1971,13 @@ function HandoverPanel({ vans, handoverTemplates, onHandoverTemplatesChange, use
           </div>
         </div>
 
-        <div className="mgmt-card" style={{ marginBottom: 16 }}>
-          <div className="mgmt-label" style={{ marginBottom: 6 }}>Attach handover to booking</div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
-            Confirm which rental this handover is for. Defaults to the next upcoming (or currently active) {van?.name} booking that doesn't have handover data yet.
-          </div>
-          {vanBookingsAll.length === 0 ? (
-            <div style={{ background: "rgba(232,185,64,0.1)", border: "1px solid rgba(232,185,64,0.3)", borderRadius: 8, padding: "10px 12px", fontSize: 13, color: "var(--warning)" }}>
-              ⚠️ No bookings exist for {van?.name} — the handover won't attach to any rental.
-            </div>
-          ) : (
-            <>
-              <select className="input" value={effectiveTargetId} onChange={e => setTargetBookingId(e.target.value)}>
-                {vanBookingsAll.map(b => {
-                  const has = !!b.rentalChecks?.handover;
-                  const isAuto = b.id === autoTargetId;
-                  return (
-                    <option key={b.id} value={b.id}>
-                      {b.clientName} · {b.startDate} → {b.endDate}
-                      {has ? "  (already has handover — will overwrite)" : ""}
-                      {isAuto && !has ? "  · default" : ""}
-                    </option>
-                  );
-                })}
-              </select>
-              {effectiveTarget?.rentalChecks?.handover && (
-                <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 8 }}>
-                  ⚠️ This booking already has a handover record ({effectiveTarget.rentalChecks.handover.by} · {fmtDate(effectiveTarget.rentalChecks.handover.date)}). Completing will overwrite it.
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        <BookingTargetPicker
+          van={van}
+          bookings={bookings}
+          checkType="handover"
+          value={targetBookingId}
+          onChange={setTargetBookingId}
+        />
 
         <div className="mgmt-card" style={{ marginBottom: 16 }}>
           <div className="mgmt-label" style={{ marginBottom: 12 }}>Document Photos</div>
@@ -2426,6 +2471,7 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
   const [photosMap, setPhotosMap] = useState({});
   const [expanded, setExpanded] = useState({});
   const [tyreData, setTyreData] = useState({});
+  const [targetBookingId, setTargetBookingId] = useState("");
   const [sessionMeta, setSessionMeta] = useState(null);
   const [eqBookingId, setEqBookingId] = useState(null);
   const [eqChecked, setEqChecked] = useState({});
@@ -2477,12 +2523,12 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
   const resetAll = () => {
     setSelectedVan(null); setPhase("vanSelect"); setMileage(""); setFuelLevel("");
     setKeysReturned(false); setCustomerIssues(""); setChecked({}); setSectionNotes({});
-    setPhotosMap({}); setExpanded({}); setTyreData({}); setSessionMeta(null);
+    setPhotosMap({}); setExpanded({}); setTyreData({}); setTargetBookingId(""); setSessionMeta(null);
   };
 
   const handleComplete = () => {
     if (!van) return;
-    onComplete(van.id, user.name, { mileage, fuelLevel, keysReturned, customerIssues }, sectionNotes, tyreData, checked, photosMap);
+    onComplete(van.id, user.name, { mileage, fuelLevel, keysReturned, customerIssues }, sectionNotes, tyreData, checked, photosMap, targetBookingId || undefined);
     resetAll();
   };
 
@@ -2647,6 +2693,14 @@ function PostTripPanel({ vans, templates, user, onComplete, bookings, equipment,
     <div className="content">
       <button className="back-btn" onClick={() => setPhase("vanSelect")}>← Back</button>
       <div className="section-title">Customer Return — {van?.name}</div>
+
+      <BookingTargetPicker
+        van={van}
+        bookings={bookings}
+        checkType="post_trip"
+        value={targetBookingId}
+        onChange={setTargetBookingId}
+      />
 
       <div className="mgmt-card" style={{ marginBottom: 16 }}>
         <div className="cl-item" onClick={() => setKeysReturned(p => !p)} style={{ padding: "12px 4px", marginBottom: 8 }}>
@@ -3847,12 +3901,12 @@ export default function App() {
     });
   };
 
-  const handlePreDepartureComplete = (vanId, byName, notes, tyreData, checked) => {
+  const handlePreDepartureComplete = (vanId, byName, notes, tyreData, checked, targetBookingId) => {
     const now = new Date().toISOString();
     persistVans(vans.map(v => v.id === vanId ? { ...v, lastPreDeparture: { by: byName, date: now, notes, tyreData }, status: "available" } : v));
     setPreDepartureProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
     db.savePredepProgress(vanId, null).catch(err => console.error(err));
-    recordRentalCheck(vanId, "pre_departure", { by: byName, date: now, notes, tyreData: tyreData || {}, checked: checked || {} });
+    recordRentalCheck(vanId, "pre_departure", { by: byName, date: now, notes, tyreData: tyreData || {}, checked: checked || {} }, targetBookingId);
     addLog("completed pre-departure check", vans.find(v => v.id === vanId)?.name);
     showToast(`Pre-departure complete for ${vans.find(v => v.id === vanId)?.name}`);
     setTab("dashboard");
@@ -3872,7 +3926,7 @@ export default function App() {
     showToast(`Handover complete — ${vanName} is now on rental`);
     setTab("dashboard");
   };
-  const handlePostTripComplete = (vanId, byName, returnInfo, sectionNotes, tyreData, checked, photosMap) => {
+  const handlePostTripComplete = (vanId, byName, returnInfo, sectionNotes, tyreData, checked, photosMap, targetBookingId) => {
     const now = new Date().toISOString();
     const vanName = vans.find(v => v.id === vanId)?.name;
     persistVans(vans.map(v => v.id === vanId ? {
@@ -3885,7 +3939,7 @@ export default function App() {
       by: byName, date: now, returnInfo: returnInfo || {},
       sectionNotes: sectionNotes || {}, tyreData: tyreData || {},
       checked: checked || {}, photosMap: photosMap || {},
-    });
+    }, targetBookingId);
     // End of rental cycle — wipe both handover and post-trip progress for this van
     setHandoverProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
     setPostTripProgress(prev => { const n = { ...prev }; delete n[vanId]; return n; });
