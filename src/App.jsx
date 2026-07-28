@@ -369,7 +369,7 @@ const DEFAULT_HANDOVER_TEMPLATES = {
       id: "ho_ext", section: "Exterior & Tyres", icon: "🚐", videoUrl: "",
       items: [
         { id: "hoe1", label: "Walk around van — note any pre-existing damage with customer" },
-        { id: "hoe2", label: "Show tyre condition and correct pressures (3.5 bar all round)" },
+        { id: "hoe2", label: "Show tyre condition and correct pressures (3.1 bar all round)" },
         { id: "hoe3", label: "Show 230v hook-up receptor (rear, under door)" },
         { id: "hoe4", label: "Show reversing camera display in cab" },
       ],
@@ -1218,11 +1218,21 @@ const TYRE_POSITIONS = [
   { key: "rl", label: "RL" },
   { key: "rr", label: "RR" },
 ];
-const TYRE_MIN_BAR_DISPLAY = 3.5;
+// Per-van safe tyre-pressure minimums (bar). Freddy runs slightly lower
+// than the general campervan default because of the Transit Custom
+// low-roof conversion loading. Extend this map for each new van template.
+const TYRE_MIN_BAR_BY_TEMPLATE = {
+  freddy: 3.1,
+  dolly: 3.5,
+};
+const TYRE_MIN_BAR_DEFAULT = 3.5;
+const tyreMinBarFor = (template) =>
+  TYRE_MIN_BAR_BY_TEMPLATE[template] ?? TYRE_MIN_BAR_DEFAULT;
 const TYRE_MIN_TREAD_DISPLAY = 2;
 
-function TyreSummary({ lastPostTrip }) {
+function TyreSummary({ lastPostTrip, vanTemplate }) {
   const data = lastPostTrip?.tyreData || {};
+  const minBar = tyreMinBarFor(vanTemplate);
   const hasAny = TYRE_POSITIONS.some(({ key }) => data[`${key}_bar`] || data[`${key}_tread`]);
   return (
     <div className="mgmt-field" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
@@ -1237,7 +1247,7 @@ function TyreSummary({ lastPostTrip }) {
               const tread = data[`${key}_tread`] || "";
               const barN   = parseFloat(bar);
               const treadN = parseFloat(tread);
-              const barFail   = !isNaN(barN)   && barN   < TYRE_MIN_BAR_DISPLAY;
+              const barFail   = !isNaN(barN)   && barN   < minBar;
               const treadFail = !isNaN(treadN) && treadN < TYRE_MIN_TREAD_DISPLAY;
               const fail = barFail || treadFail;
               return (
@@ -1291,7 +1301,7 @@ function VanPanel({ vans, onUpdate, currentUser }) {
             <div className="mgmt-field"><span className="mgmt-label">MOT</span><span style={{ fontSize: 14 }}>{fmtDate(v.motExpiry)}</span></div>
             <div className="mgmt-field"><span className="mgmt-label">Tax</span><span style={{ fontSize: 14 }}>{fmtDate(v.taxExpiry)}</span></div>
             <div className="mgmt-field"><span className="mgmt-label">Insurance</span><span style={{ fontSize: 14 }}>{fmtDate(v.insuranceExpiry)}</span></div>
-            <TyreSummary lastPostTrip={v.lastPostTrip} />
+            <TyreSummary lastPostTrip={v.lastPostTrip} vanTemplate={v.checklistTemplate} />
             {isAdmin && <div className="btn-row"><button className="btn btn-secondary btn-sm" onClick={() => { setForm({ name: v.name, motExpiry: v.motExpiry || "", taxExpiry: v.taxExpiry || "", insuranceExpiry: v.insuranceExpiry || "", mileage: String(v.mileage || "") }); setModal(v.id); }}>Edit</button><button className="btn btn-danger btn-sm" onClick={() => onUpdate(vans.filter(x => x.id !== v.id))}>Remove</button></div>}
           </div>
         ))}
@@ -1312,10 +1322,10 @@ function VanPanel({ vans, onUpdate, currentUser }) {
 // ── Tyre check grid (shared between pre-departure and post-trip) ─
 const TYRE_SECTION_IDS = new Set(["check_exterior", "d_check_exterior"]);
 
-const TYRE_MIN_BAR   = 3.5;  // ~50 psi — Ford Transit Custom + VW T5 fully laden
 const TYRE_MIN_TREAD = 2;    // mm legal + safety minimum
 
-function TyreGrid({ data, onChange }) {
+function TyreGrid({ data, onChange, vanTemplate }) {
+  const minBar = tyreMinBarFor(vanTemplate);
   const positions = [
     { key: "fl", label: "Front Left" },
     { key: "fr", label: "Front Right" },
@@ -1323,7 +1333,7 @@ function TyreGrid({ data, onChange }) {
     { key: "rr", label: "Rear Right" },
   ];
 
-  const failingBar   = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_bar`]);   return !isNaN(v) && v < TYRE_MIN_BAR;   });
+  const failingBar   = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_bar`]);   return !isNaN(v) && v < minBar;   });
   const failingTread = positions.filter(({ key }) => { const v = parseFloat(data[`${key}_tread`]); return !isNaN(v) && v < TYRE_MIN_TREAD; });
   const hasFailures  = failingBar.length > 0 || failingTread.length > 0;
 
@@ -1333,7 +1343,7 @@ function TyreGrid({ data, onChange }) {
         🔵 Tyre Readings
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
-        Minimums: {TYRE_MIN_BAR} bar pressure · {TYRE_MIN_TREAD}mm tread depth
+        Minimums: {minBar} bar pressure · {TYRE_MIN_TREAD}mm tread depth
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {positions.map(({ key, label }) => {
@@ -1341,7 +1351,7 @@ function TyreGrid({ data, onChange }) {
           const treadVal = data[`${key}_tread`] || "";
           const barNum   = parseFloat(barVal);
           const treadNum = parseFloat(treadVal);
-          const barFail   = !isNaN(barNum)   && barNum   < TYRE_MIN_BAR;
+          const barFail   = !isNaN(barNum)   && barNum   < minBar;
           const treadFail = !isNaN(treadNum) && treadNum < TYRE_MIN_TREAD;
           const anyFail   = barFail || treadFail;
           return (
@@ -1356,7 +1366,7 @@ function TyreGrid({ data, onChange }) {
               <div style={{ display: "flex", gap: 6 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 11, marginBottom: 3, color: barFail ? "var(--danger)" : "var(--text-muted)", fontWeight: barFail ? 600 : 400 }}>
-                    Bar{barFail ? ` < ${TYRE_MIN_BAR}!` : ""}
+                    Bar{barFail ? ` < ${minBar}!` : ""}
                   </div>
                   <input className="input" inputMode="decimal" placeholder="—"
                     value={barVal}
@@ -1386,7 +1396,7 @@ function TyreGrid({ data, onChange }) {
           <div style={{ fontWeight: 700, color: "var(--danger)", fontSize: 13, marginBottom: 6 }}>⚠️ Tyre readings below safe minimum</div>
           {failingBar.length > 0 && (
             <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 2 }}>
-              Low pressure ({TYRE_MIN_BAR} bar min): {failingBar.map(p => p.label).join(", ")}
+              Low pressure ({minBar} bar min): {failingBar.map(p => p.label).join(", ")}
             </div>
           )}
           {failingTread.length > 0 && (
