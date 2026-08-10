@@ -118,6 +118,7 @@ const FREDDY_CHECKLIST = [
     id: "inv_outdoor", section: "Inventory — Outdoor", icon: "⛺",
     items: [
       { id: "io1", label: "Camping chairs (under storage unit, access via rear doors)", qty: 2 },
+      { id: "io_chairs_damage", label: "Check camping chairs for damage — frames, fabric, hinges, feet", qty: null },
     ],
   },
   {
@@ -271,6 +272,7 @@ const DOLLY_CHECKLIST = [
     id: "d_inv_outdoor", section: "Inventory — Outdoor", icon: "⛺",
     items: [
       { id: "dio1", label: "Camping chairs (stored in hab area)", qty: 2 },
+      { id: "dio_chairs_damage", label: "Check camping chairs for damage — frames, fabric, hinges, feet", qty: null },
     ],
   },
   {
@@ -359,24 +361,9 @@ const DEFAULT_TEMPLATES = { freddy: FREDDY_CHECKLIST, dolly: DOLLY_CHECKLIST };
 
 // Post-trip uses the same base checklists but without cleaning sections
 // (cleaning is only done during pre-departure prep, not on return)
-// Items that only make sense on the post-trip check (condition assessment
-// after a rental), keyed by section id. Kept out of the shared checklists so
-// they don't also appear on the pre-departure clean & check.
-const POST_TRIP_EXTRA_ITEMS = {
-  inv_outdoor:   [{ id: "io_chairs_damage",  label: "Check camping chairs for damage — frames, fabric, hinges, feet", qty: null }],
-  d_inv_outdoor: [{ id: "dio_chairs_damage", label: "Check camping chairs for damage — frames, fabric, hinges, feet", qty: null }],
-};
-
-// Clones each section it touches — FREDDY_CHECKLIST / DOLLY_CHECKLIST objects
-// are shared with the pre-departure templates and must not be mutated.
-const withPostTripExtras = (sections) =>
-  sections.map(s => POST_TRIP_EXTRA_ITEMS[s.id]
-    ? { ...s, items: [...s.items, ...POST_TRIP_EXTRA_ITEMS[s.id]] }
-    : s);
-
 const DEFAULT_POST_TRIP_TEMPLATES = {
-  freddy: withPostTripExtras(FREDDY_CHECKLIST.filter(s => !s.section.startsWith("Cleaning"))),
-  dolly:  withPostTripExtras(DOLLY_CHECKLIST.filter(s => !s.section.startsWith("Cleaning"))),
+  freddy: FREDDY_CHECKLIST.filter(s => !s.section.startsWith("Cleaning")),
+  dolly:  DOLLY_CHECKLIST.filter(s => !s.section.startsWith("Cleaning")),
 };
 
 // ── Handover walkthrough templates ─────────────────────────────
@@ -619,7 +606,7 @@ const DEFAULT_EQUIPMENT = [
 // has already saved a copy. Bumping this version merges any missing default
 // items in — once. Because the version is then stored, an item an admin later
 // deletes stays deleted instead of reappearing on every load.
-const TEMPLATE_SEED_VERSION = 2;
+const TEMPLATE_SEED_VERSION = 3;
 
 const mergeMissingDefaultItems = (saved, defaults) => {
   if (!saved || typeof saved !== "object") return defaults;
@@ -643,15 +630,17 @@ const mergeMissingDefaultItems = (saved, defaults) => {
   return out;
 };
 
-// Runs the merge once per version bump, then records the version so it
-// doesn't run again on every load.
-const applyTemplateSeed = async (savedPostTrip) => {
+// Runs the merge once per version bump for both the pre-departure and
+// post-trip templates, then records the version so it doesn't run again on
+// every load. Returns the (possibly merged) pair.
+const applyTemplateSeed = async (savedPreDep, savedPostTrip) => {
   let seen = 0;
   try { seen = parseInt(localStorage.getItem("se_template_seed_version") || "0", 10) || 0; } catch {}
-  if (seen >= TEMPLATE_SEED_VERSION) return savedPostTrip;
-  const merged = mergeMissingDefaultItems(savedPostTrip, DEFAULT_POST_TRIP_TEMPLATES);
+  if (seen >= TEMPLATE_SEED_VERSION) return { preDep: savedPreDep, postTrip: savedPostTrip };
+  const preDep   = mergeMissingDefaultItems(savedPreDep,   DEFAULT_TEMPLATES);
+  const postTrip = mergeMissingDefaultItems(savedPostTrip, DEFAULT_POST_TRIP_TEMPLATES);
   try { localStorage.setItem("se_template_seed_version", String(TEMPLATE_SEED_VERSION)); } catch {}
-  return merged;
+  return { preDep, postTrip };
 };
 
 // localStorage-backed store (will be replaced by Supabase)
@@ -3821,9 +3810,9 @@ export default function App() {
           db.getTeam(), db.getVans(), db.getBookings(), db.getEquipment(), db.getLogs(),
           db.getPredepProgress(), db.getHandoverProgress(), db.getPostTripProgress(),
         ]);
-        const tp  = await store.get("se_templates", DEFAULT_TEMPLATES);
+        const tpRaw  = await store.get("se_templates", DEFAULT_TEMPLATES);
         const ptpRaw = await store.get("se_post_trip_templates", DEFAULT_POST_TRIP_TEMPLATES);
-        const ptp = await applyTemplateSeed(ptpRaw);
+        const { preDep: tp, postTrip: ptp } = await applyTemplateSeed(tpRaw, ptpRaw);
         const ht  = await store.get("se_handover_templates", DEFAULT_HANDOVER_TEMPLATES);
         setTeam(teamData.length ? teamData : DEFAULT_TEAM);
         setVans(vansData.length ? vansData : DEFAULT_VANS);
@@ -3841,9 +3830,9 @@ export default function App() {
         const t   = await store.get("se_team", DEFAULT_TEAM);
         const v   = await store.get("se_vans", DEFAULT_VANS);
         const l   = await store.get("se_logs", []);
-        const tp  = await store.get("se_templates", DEFAULT_TEMPLATES);
+        const tpRaw  = await store.get("se_templates", DEFAULT_TEMPLATES);
         const ptpRaw = await store.get("se_post_trip_templates", DEFAULT_POST_TRIP_TEMPLATES);
-        const ptp = await applyTemplateSeed(ptpRaw);
+        const { preDep: tp, postTrip: ptp } = await applyTemplateSeed(tpRaw, ptpRaw);
         const ht  = await store.get("se_handover_templates", DEFAULT_HANDOVER_TEMPLATES);
         const bk  = await store.get("se_bookings", []);
         const eq  = await store.get("se_equipment", DEFAULT_EQUIPMENT);
