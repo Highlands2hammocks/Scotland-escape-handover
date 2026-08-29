@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ensureSignedIn, db } from "./supabase.js";
+import { ensureSignedIn, db, setReadOnly as setDbReadOnly } from "./supabase.js";
 import "./app.css";
 
 const APP_VERSION = "1.4.0";
@@ -3801,15 +3801,30 @@ export default function App() {
   const [preDepartureProgress, setPreDepartureProgress] = useState({});
   const [handoverProgress, setHandoverProgress] = useState({});
   const [postTripProgress, setPostTripProgress] = useState({});
+  const [loadError, setLoadError] = useState("");
+  const [retrying, setRetrying] = useState(false);
 
-  useEffect(() => {
-    (async () => {
+  // Pulled out so the offline banner's Retry button can re-run it.
+  const loadEverything = useCallback(async () => {
       try {
-        await ensureSignedIn();
-        const [teamData, vansData, bookingsData, equipmentData, logsData, predepData, handoverData, postTripData] = await Promise.all([
-          db.getTeam(), db.getVans(), db.getBookings(), db.getEquipment(), db.getLogs(),
-          db.getPredepProgress(), db.getHandoverProgress(), db.getPostTripProgress(),
-        ]);
+        // One transient network blip at launch used to drop the app into
+        // local-only mode for the whole session — retry before giving up.
+        let lastErr;
+        let loaded = null;
+        for (let attempt = 0; attempt < 3 && !loaded; attempt++) {
+          try {
+            if (attempt) await new Promise(r => setTimeout(r, 400 * 2 ** attempt));
+            await ensureSignedIn();
+            loaded = await Promise.all([
+              db.getTeam(), db.getVans(), db.getBookings(), db.getEquipment(), db.getLogs(),
+              db.getPredepProgress(), db.getHandoverProgress(), db.getPostTripProgress(),
+            ]);
+          } catch (e) { lastErr = e; }
+        }
+        if (!loaded) throw lastErr;
+        const [teamData, vansData, bookingsData, equipmentData, logsData, predepData, handoverData, postTripData] = loaded;
+        setDbReadOnly(false);
+        setLoadError("");
         const tpRaw  = await store.get("se_templates", DEFAULT_TEMPLATES);
         const ptpRaw = await store.get("se_post_trip_templates", DEFAULT_POST_TRIP_TEMPLATES);
         const { preDep: tp, postTrip: ptp } = await applyTemplateSeed(tpRaw, ptpRaw);
@@ -3827,6 +3842,11 @@ export default function App() {
         setHandoverTemplates(ht);
       } catch (err) {
         console.error("Supabase load failed, falling back to localStorage:", err);
+        // Local-only mode. The data below may be stale or seed defaults, so
+        // writes are blocked and a banner tells the team what they're seeing —
+        // silently rendering seed vans with no bookings looks like a data wipe.
+        setDbReadOnly(true);
+        setLoadError(err?.message || "Couldn't reach the database");
         const t   = await store.get("se_team", DEFAULT_TEAM);
         const v   = await store.get("se_vans", DEFAULT_VANS);
         const l   = await store.get("se_logs", []);
@@ -3841,8 +3861,9 @@ export default function App() {
         setBookings(bk); setEquipment(eq); setPreDepartureProgress(pdp);
       }
       setLoaded(true);
-    })();
   }, []);
+
+  useEffect(() => { loadEverything(); }, [loadEverything]);
 
   // Templates stay in localStorage (rarely change, device-level config for now)
   useEffect(() => { if (loaded) store.set("se_templates", templates); }, [templates, loaded]);
@@ -4059,6 +4080,22 @@ export default function App() {
         ))}
       </div>
       <div className="nav">{tabs.map(t => <button key={t.id} className={`nav-btn ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
+      {loadError && (
+        <div style={{ background: "rgba(239,68,68,0.12)", borderBottom: "1px solid rgba(239,68,68,0.45)", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontWeight: 700, color: "var(--danger)", fontSize: 14, marginBottom: 2 }}>
+              ⚠️ Not connected — showing this device's local data only
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+              Bookings and vans may be missing or out of date, and nothing you change here will be saved. This is a connection problem, not lost data — the database is untouched.
+            </div>
+          </div>
+          <button className="btn btn-secondary btn-sm" disabled={retrying}
+            onClick={async () => { setRetrying(true); await loadEverything(); setRetrying(false); }}>
+            {retrying ? "Retrying…" : "Retry"}
+          </button>
+        </div>
+      )}
       {tab === "dashboard" && <Dashboard vans={vans} logs={logs} bookings={bookings} onSetStatus={handleStatusChange} onBookingUpdate={handleBookingUpdate} preDepartureProgress={preDepartureProgress} templates={templates} handoverTemplates={handoverTemplates} postTripTemplates={postTripTemplates} />}
       {tab === "calendar" && <CalendarPanel vans={vans} bookings={bookings} templates={templates} handoverTemplates={handoverTemplates} postTripTemplates={postTripTemplates} onBookingUpdate={handleBookingUpdate} />}
       {tab === "bookings" && <BookingsPanel vans={vans} bookings={bookings} onUpdate={handleBookingsUpdate} onBookingUpdate={handleBookingUpdate} isAdmin={user.role === "admin"} equipment={equipment} />}

@@ -208,20 +208,33 @@ const EQUIPMENT_SEEDS = [
 
 // ── DB operations ─────────────────────────────────────────────
 
+// When the initial load fails the app runs on whatever local data it has.
+// In that state the in-memory vans/team may be seed defaults rather than the
+// real rows, so writes are refused outright — otherwise a status change on a
+// degraded device could overwrite good Supabase data with placeholders.
+let readOnly = false;
+export const setReadOnly = (v) => { readOnly = !!v; };
+export const isReadOnly = () => readOnly;
+const guardWrite = (label) => {
+  if (readOnly) throw new Error(`${label}: not connected — change was not saved`);
+};
+
 export const db = {
 
   // ── Team members ──
   async getTeam() {
     const { data, error } = await supabase.from("team_members").select("*").order("name");
-    if (error) { console.error("getTeam:", error.message); return []; }
+    if (error) { console.error("getTeam:", error.message); throw new Error("getTeam failed — " + error.message); }
     return (data || []).map(fromDbMember);
   },
   async saveTeam(members) {
+    guardWrite("saveTeam");
     if (!members?.length) return;
     const { error } = await supabase.from("team_members").upsert(members.map(toDbMember));
     if (error) console.error("saveTeam:", error.message);
   },
   async softDeleteTeamMember(id) {
+    guardWrite("softDeleteTeamMember");
     const { error } = await supabase.from("team_members").update({ active: false }).eq("id", id);
     if (error) console.error("softDeleteTeamMember:", error.message);
   },
@@ -229,7 +242,7 @@ export const db = {
   // ── Vans ──
   async getVans() {
     const { data, error } = await supabase.from("vans").select("*").order("name");
-    if (error) { console.error("getVans:", error.message); return []; }
+    if (error) { console.error("getVans:", error.message); throw new Error("getVans failed — " + error.message); }
     if (data?.length) return data.map(fromDbVan);
     // First run — seed Freddy and Dolly
     const { data: seeded, error: seedErr } = await supabase.from("vans").insert(VAN_SEEDS).select();
@@ -237,6 +250,7 @@ export const db = {
     return (seeded || []).map(fromDbVan);
   },
   async saveVans(vans) {
+    guardWrite("saveVans");
     if (!vans?.length) return;
     const { error } = await supabase.from("vans").upsert(vans.map(toDbVan));
     if (error) {
@@ -248,10 +262,11 @@ export const db = {
   // ── Bookings ──
   async getBookings() {
     const { data, error } = await supabase.from("bookings").select("*").order("start_date");
-    if (error) { console.error("getBookings:", error.message); return []; }
+    if (error) { console.error("getBookings:", error.message); throw new Error("getBookings failed — " + error.message); }
     return (data || []).map(fromDbBooking);
   },
   async upsertBooking(booking) {
+    guardWrite("upsertBooking");
     const { error } = await supabase.from("bookings").upsert(toDbBooking(booking));
     if (error) {
       console.error("upsertBooking:", error.message);
@@ -259,6 +274,7 @@ export const db = {
     }
   },
   async deleteBooking(id) {
+    guardWrite("deleteBooking");
     const { error } = await supabase.from("bookings").delete().eq("id", id);
     if (error) console.error("deleteBooking:", error.message);
   },
@@ -266,7 +282,7 @@ export const db = {
   // ── Equipment catalogue ──
   async getEquipment() {
     const { data, error } = await supabase.from("equipment_catalogue").select("*").order("sort_order").order("name");
-    if (error) { console.error("getEquipment:", error.message); return []; }
+    if (error) { console.error("getEquipment:", error.message); throw new Error("getEquipment failed — " + error.message); }
     if (data?.length) return data.map(fromDbEquipment);
     // First run — seed default catalogue
     const { data: seeded, error: seedErr } = await supabase.from("equipment_catalogue").insert(EQUIPMENT_SEEDS).select();
@@ -274,10 +290,12 @@ export const db = {
     return (seeded || []).map(fromDbEquipment);
   },
   async upsertEquipment(item) {
+    guardWrite("upsertEquipment");
     const { error } = await supabase.from("equipment_catalogue").upsert(toDbEquipment(item));
     if (error) console.error("upsertEquipment:", error.message);
   },
   async deleteEquipment(id) {
+    guardWrite("deleteEquipment");
     const { error } = await supabase.from("equipment_catalogue").delete().eq("id", id);
     if (error) console.error("deleteEquipment:", error.message);
   },
@@ -285,10 +303,11 @@ export const db = {
   // ── Activity log ──
   async getLogs() {
     const { data, error } = await supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(50);
-    if (error) { console.error("getLogs:", error.message); return []; }
+    if (error) { console.error("getLogs:", error.message); throw new Error("getLogs failed — " + error.message); }
     return (data || []).map(fromDbLog);
   },
   async addLog(entry) {
+    guardWrite("addLog");
     const { error } = await supabase.from("activity_log").insert({
       action: entry.action,
       metadata: { who: entry.who, van: entry.van || "" },
@@ -299,12 +318,13 @@ export const db = {
   // ── Pre-departure progress ──
   async getPredepProgress() {
     const { data, error } = await supabase.from("predep_progress").select("*");
-    if (error) { console.error("getPredepProgress:", error.message); return {}; }
+    if (error) { console.error("getPredepProgress:", error.message); throw new Error("getPredepProgress failed — " + error.message); }
     const result = {};
     (data || []).forEach(row => { result[row.van_id] = fromDbPredep(row); });
     return result;
   },
   async savePredepProgress(vanId, progressData) {
+    guardWrite("savePredepProgress");
     if (!vanId) return;
     if (progressData === null) {
       const { error } = await supabase.from("predep_progress").delete().eq("van_id", vanId);
@@ -330,12 +350,13 @@ export const db = {
   // ── Handover progress ──
   async getHandoverProgress() {
     const { data, error } = await supabase.from("handover_progress").select("*");
-    if (error) { console.error("getHandoverProgress:", error.message); return {}; }
+    if (error) { console.error("getHandoverProgress:", error.message); throw new Error("getHandoverProgress failed — " + error.message); }
     const result = {};
     (data || []).forEach(row => { result[row.van_id] = fromDbHandover(row); });
     return result;
   },
   async saveHandoverProgress(vanId, p) {
+    guardWrite("saveHandoverProgress");
     if (!vanId) return;
     if (p === null) {
       const { error } = await supabase.from("handover_progress").delete().eq("van_id", vanId);
@@ -376,12 +397,13 @@ export const db = {
   // ── Post-trip progress ──
   async getPostTripProgress() {
     const { data, error } = await supabase.from("post_trip_progress").select("*");
-    if (error) { console.error("getPostTripProgress:", error.message); return {}; }
+    if (error) { console.error("getPostTripProgress:", error.message); throw new Error("getPostTripProgress failed — " + error.message); }
     const result = {};
     (data || []).forEach(row => { result[row.van_id] = fromDbPostTrip(row); });
     return result;
   },
   async savePostTripProgress(vanId, p) {
+    guardWrite("savePostTripProgress");
     if (!vanId) return;
     if (p === null) {
       const { error } = await supabase.from("post_trip_progress").delete().eq("van_id", vanId);
